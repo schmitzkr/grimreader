@@ -36,7 +36,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import com.schmitzkr.grimreader.core.model.Book
+import com.schmitzkr.grimreader.core.model.PageFormat
 import com.schmitzkr.grimreader.data.BooksRepository
 import com.schmitzkr.grimreader.playback.PlayerController
 import com.schmitzkr.grimreader.ui.components.BookCover
@@ -94,6 +96,7 @@ fun BookDetailScreen(
     bookId: Long,
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
+    onOpenReader: (PageFormat) -> Unit,
     vm: BookDetailViewModel = hiltViewModel(key = "book-$bookId"),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -183,8 +186,17 @@ fun BookDetailScreen(
                             Text(if (isCurrent) "Now playing" else if ((progress ?: 0.0) > 0) "Continue" else "Listen")
                         }
                     } else {
-                        OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                            Text("Reader coming soon (${book.primaryFileType ?: "ebook"})")
+                        val pageFormat = PageFormat.entries.firstOrNull { book.primaryFileType == it.bookType || book.fileIdFor(it) != null }
+                        if (pageFormat != null) {
+                            Button(onClick = { onOpenReader(pageFormat) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                                Icon(Icons.AutoMirrored.Rounded.MenuBook, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if ((progress ?: 0.0) > 0) "Continue reading" else "Read")
+                            }
+                        } else {
+                            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                                Text("No reader for ${book.primaryFileType ?: "this format"} yet")
+                            }
                         }
                     }
                     Spacer(Modifier.height(10.dp))

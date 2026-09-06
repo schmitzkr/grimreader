@@ -4,7 +4,12 @@ import com.schmitzkr.grimreader.core.api.GrimmoryClient
 import com.schmitzkr.grimreader.core.api.audiobookProgressBody
 import com.schmitzkr.grimreader.core.api.bookmarkBody
 import com.schmitzkr.grimreader.core.api.inProgressOrder
+import com.schmitzkr.grimreader.core.api.pageProgressBody
 import com.schmitzkr.grimreader.core.api.parseAudiobookProgress
+import com.schmitzkr.grimreader.core.api.parsePageProgress
+import com.schmitzkr.grimreader.core.model.PageFormat
+import com.schmitzkr.grimreader.core.model.PageProgress
+import java.io.File
 import com.schmitzkr.grimreader.core.api.StatusRequest
 import com.schmitzkr.grimreader.core.api.RatingRequest
 import com.schmitzkr.grimreader.core.model.AudiobookInfo
@@ -140,6 +145,38 @@ class BooksRepository @Inject constructor(private val clients: ClientHolder) {
     // ── Audiobooks ────────────────────────────────────────────────────────
 
     suspend fun audiobookInfo(bookId: Long): AudiobookInfo = api.audiobookInfo(bookId)
+
+    // ── Page readers (comics and PDFs) ────────────────────────────────────
+
+    suspend fun pageProgress(bookId: Long, format: PageFormat): PageProgress? {
+        val response = api.progress(bookId)
+        if (response.code() == 404) return null
+        if (!response.isSuccessful) throw HttpException(response)
+        return response.body()?.let { parsePageProgress(it, format, client().json) }
+    }
+
+    suspend fun savePageProgress(bookId: Long, progress: PageProgress, format: PageFormat, bookFileId: Long?) {
+        api.updateProgress(bookId, pageProgressBody(progress, format, bookFileId, client().json))
+    }
+
+    /** The page numbers the server can render for a comic, in reading order. */
+    suspend fun comicPages(bookId: Long): List<Int> = api.comicPages(bookId)
+
+    fun comicPageUrl(bookId: Long, page: Int): String = client().comicPageUrl(bookId, page)
+
+    /**
+     * Streams a book file to [target] (through a temp file, so a half
+     * download never looks complete). [fileId] null means the primary file.
+     */
+    suspend fun downloadToFile(book: Book, fileId: Long?, target: File) {
+        val additional = book.downloadFileId(fileId)
+        val response = if (additional == null) api.downloadBook(book.id) else api.downloadBookFile(book.id, additional)
+        if (!response.isSuccessful) throw HttpException(response)
+        val body = response.body() ?: error("Empty download")
+        val temp = File(target.parentFile, "${target.name}.part")
+        body.byteStream().use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
+        if (!temp.renameTo(target)) error("Could not move the downloaded file into place")
+    }
 
     suspend fun audiobookProgress(bookId: Long): AudiobookProgress? {
         val response = api.progress(bookId)

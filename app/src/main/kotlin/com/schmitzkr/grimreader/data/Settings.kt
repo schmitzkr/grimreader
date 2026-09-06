@@ -66,6 +66,16 @@ class Settings @Inject constructor(private val context: Context) {
 
     suspend fun clearSearches() = store.edit { it.remove(RECENT_SEARCHES) }
 
+    // ── Readers ───────────────────────────────────────────────────────────
+
+    /** Manga reads right to left; the server's comic settings carry no direction, so this is per device. */
+    suspend fun comicRtl(bookId: Long): Boolean = store.data.first()[booleanPreferencesKey("comic_rtl_$bookId")] ?: false
+    suspend fun setComicRtl(bookId: Long, rtl: Boolean) = store.edit { it[booleanPreferencesKey("comic_rtl_$bookId")] = rtl }
+
+    /** One night-mode preference shared by the readers. */
+    suspend fun readerNight(): Boolean = store.data.first()[READER_NIGHT] ?: false
+    suspend fun setReaderNight(on: Boolean) = store.edit { it[READER_NIGHT] = on }
+
     suspend fun speedFor(bookId: Long): Float = store.data.first().let { p ->
         (p[doublePreferencesKey("speed_$bookId")] ?: p[DEFAULT_SPEED] ?: 1.0).toFloat()
     }
@@ -122,6 +132,7 @@ class Settings @Inject constructor(private val context: Context) {
         val EXPIRES_AT = longPreferencesKey("expires_at")
         val LAST_UPDATE_CHECK = longPreferencesKey("last_update_check")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
+        val READER_NIGHT = booleanPreferencesKey("reader_night")
     }
 }
 

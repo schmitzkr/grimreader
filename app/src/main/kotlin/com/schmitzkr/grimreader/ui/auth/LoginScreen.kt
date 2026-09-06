@@ -16,9 +16,11 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,6 +40,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.schmitzkr.grimreader.core.model.PublicSettings
 import com.schmitzkr.grimreader.data.AuthRepository
 import com.schmitzkr.grimreader.data.Settings
 import com.schmitzkr.grimreader.ui.components.GrimCard
@@ -57,6 +60,14 @@ class LoginViewModel @Inject constructor(
     val serverUrl = settings.serverUrl.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
+    val publicSettings = MutableStateFlow<PublicSettings?>(null)
+    val oidcError = auth.oidcError
+
+    init {
+        viewModelScope.launch {
+            publicSettings.value = runCatching { auth.publicSettings() }.getOrNull()
+        }
+    }
 
     fun login(username: String, password: String) {
         if (busy.value) return
@@ -73,6 +84,17 @@ class LoginViewModel @Inject constructor(
         }
     }
 
+    /** Hands off to the browser; the app resumes signed in when it returns. */
+    fun signInWithSso() {
+        val provider = publicSettings.value?.oidcProviderDetails ?: return
+        viewModelScope.launch {
+            auth.clearOidcFailure()
+            error.value = null
+            runCatching { auth.beginOidc(provider) }
+                .onFailure { error.value = friendlyError(it) }
+        }
+    }
+
     fun changeServer() {
         viewModelScope.launch { auth.changeServer() }
     }
@@ -85,7 +107,12 @@ fun LoginScreen(sessionExpired: Boolean, vm: LoginViewModel = hiltViewModel()) {
     var showPassword by remember { mutableStateOf(false) }
     val busy by vm.busy.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
+    val oidcError by vm.oidcError.collectAsStateWithLifecycle()
     val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
+    val public by vm.publicSettings.collectAsStateWithLifecycle()
+    val sso = public?.takeIf { it.oidcEnabled && it.oidcProviderDetails?.issuerUri != null }
+    val ssoOnly = sso?.oidcForceOnlyMode == true
+    val providerName = sso?.oidcProviderDetails?.providerName?.takeIf { it.isNotBlank() } ?: "SSO"
 
     Column(
         Modifier
@@ -115,44 +142,81 @@ fun LoginScreen(sessionExpired: Boolean, vm: LoginViewModel = hiltViewModel()) {
                 )
             }
         }
+        (oidcError ?: error.takeIf { ssoOnly })?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+        }
         Spacer(Modifier.height(20.dp))
-        OutlinedTextField(
-            value = username,
-            onValueChange = { username = it },
-            label = { Text("Username") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Password") },
-            singleLine = true,
-            isError = error != null,
-            supportingText = error?.let { { Text(it) } },
-            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(onClick = { showPassword = !showPassword }) {
-                    Icon(
-                        if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                        contentDescription = if (showPassword) "Hide password" else "Show password",
+
+        if (sso != null) {
+            Button(onClick = vm::signInWithSso, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                Text("Sign in with $providerName")
+            }
+            if (!ssoOnly) {
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    HorizontalDivider(Modifier.weight(1f))
+                    Text(
+                        "  or with a password  ",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    HorizontalDivider(Modifier.weight(1f))
                 }
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { vm.login(username, password) }),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(20.dp))
-        Button(
-            onClick = { vm.login(username, password) },
-            enabled = !busy && username.isNotBlank() && password.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) {
-            if (busy) CircularProgressIndicator(Modifier.height(20.dp), strokeWidth = 2.dp)
-            else Text("Sign in")
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+
+        if (!ssoOnly) {
+            OutlinedTextField(
+                value = username,
+                onValueChange = { username = it },
+                label = { Text("Username") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                singleLine = true,
+                isError = error != null,
+                supportingText = error?.let { { Text(it) } },
+                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { showPassword = !showPassword }) {
+                        Icon(
+                            if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                            contentDescription = if (showPassword) "Hide password" else "Show password",
+                        )
+                    }
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { vm.login(username, password) }),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(20.dp))
+            val passwordButton: @Composable () -> Unit = {
+                if (busy) CircularProgressIndicator(Modifier.height(20.dp), strokeWidth = 2.dp)
+                else Text("Sign in")
+            }
+            if (sso != null) {
+                OutlinedButton(
+                    onClick = { vm.login(username, password) },
+                    enabled = !busy && username.isNotBlank() && password.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    content = { passwordButton() },
+                )
+            } else {
+                Button(
+                    onClick = { vm.login(username, password) },
+                    enabled = !busy && username.isNotBlank() && password.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    content = { passwordButton() },
+                )
+            }
         }
     }
 }

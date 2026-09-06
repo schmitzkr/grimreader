@@ -52,6 +52,8 @@ import com.schmitzkr.grimreader.ui.browse.BookListViewModel
 import com.schmitzkr.grimreader.ui.browse.BrowseScreen
 import com.schmitzkr.grimreader.ui.browse.TitledBookList
 import com.schmitzkr.grimreader.ui.search.SearchScreen
+import com.schmitzkr.grimreader.ui.reader.PageReaderScreen
+import com.schmitzkr.grimreader.core.model.PageFormat
 import android.net.Uri
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.rounded.Explore
@@ -77,6 +79,9 @@ object Routes {
     fun author(id: Long) = "author/$id"
     fun shelf(id: Long) = "shelf/$id"
     fun magicShelf(id: Long) = "magic/$id"
+
+    const val READER = "reader/{format}/{id}"
+    fun reader(format: PageFormat, id: Long) = "reader/${format.name.lowercase()}/$id"
 }
 
 /** Picks the screen from the auth state; everything signed-in lives in [MainShell]. */
@@ -195,9 +200,24 @@ private fun MainShell(vm: RootViewModel) {
                     bookId = entry.arguments!!.getLong("id"),
                     onBack = { nav.popBackStack() },
                     onOpenPlayer = { nav.navigate(Routes.PLAYER) },
+                    onOpenReader = { format -> nav.navigate(Routes.reader(format, entry.arguments!!.getLong("id"))) },
                 )
             }
             composable(Routes.PLAYER) { PlayerScreen(onBack = { nav.popBackStack() }) }
+            composable(
+                Routes.READER,
+                arguments = listOf(
+                    navArgument("format") { type = NavType.StringType },
+                    navArgument("id") { type = NavType.LongType },
+                ),
+            ) { entry ->
+                val format = PageFormat.valueOf(entry.arguments!!.getString("format")!!.uppercase())
+                PageReaderScreen(
+                    bookId = entry.arguments!!.getLong("id"),
+                    format = format,
+                    onBack = { nav.popBackStack() },
+                )
+            }
         }
 
         // The floating bottom: mini player above the tab bar, both inset

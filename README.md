@@ -24,12 +24,15 @@ digital library server. Kotlin and Jetpack Compose.
   chapters, speed (remembered per book), sleep timer with fade-out,
   auto-rewind after a pause, notification and lock-screen controls,
   Android Auto browsing
+- Comic (CBX) and PDF readers: pinch to zoom, double-tap, page slider,
+  right-to-left reading for manga, night mode for PDFs, progress saved to
+  the server so the web reader opens on the same page
 - Floating mini player and navigation bar, neutral theme with a choice of
   accent, pure-black option for OLED screens
 
 ## Coming next
 
-In rough order: SSO sign-in, the EPUB, PDF and comic readers, downloads and
+In rough order: SSO sign-in, the EPUB reader, downloads and
 offline playback, dashboard rows from the server's layout, series, authors
 and shelves, search, bookmarks, in-app updates, reading-session recording
 and the stats screen. Each has an issue in the tracker.

@@ -214,12 +214,14 @@ data class LoginRequest(val username: String, val password: String)
 @Serializable
 data class RefreshRequest(val refreshToken: String)
 
+/** What `POST /auth/oidc/callback` takes; the server redeems the code itself. */
 @Serializable
 data class OidcCallbackRequest(
     val code: String,
     val state: String,
     val redirectUri: String,
-    val codeVerifier: String? = null,
+    val codeVerifier: String,
+    val nonce: String,
 )
 
 @Serializable

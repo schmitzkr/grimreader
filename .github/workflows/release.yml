@@ -3,7 +3,7 @@ name: Release
 # Cut a signed release: workflow_dispatch with a semver version. Builds the
 # APK, tags vX.Y.Z, publishes a GitHub Release with the APK attached, and
 # opens a PR bumping the version in app/build.gradle.kts. Secrets:
-# KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD,
+# KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD, and optionally
 # RELEASE_PUSH_TOKEN (a PAT that may open PRs), same names as the Flutter app.
 
 on:
@@ -74,9 +74,11 @@ jobs:
           gh release create "$TAG" grimreader.apk grimreader-mapping.zip \
             --title "$TAG" --generate-notes --target "${{ github.sha }}"
 
+      # With a personal token the bump PR gets its own CI run; with the
+      # built-in token it still opens, GitHub just does not run checks on it.
       - name: Open version bump PR
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
         run: |
           set -euo pipefail
           BRANCH="release/v${{ inputs.version }}"

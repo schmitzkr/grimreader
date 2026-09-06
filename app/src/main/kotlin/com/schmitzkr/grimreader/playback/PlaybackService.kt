@@ -26,7 +26,10 @@ import com.schmitzkr.grimreader.core.playback.audiobookPercentage
 import com.schmitzkr.grimreader.core.playback.trackRelativeMs
 import com.schmitzkr.grimreader.data.BooksRepository
 import com.schmitzkr.grimreader.data.ClientHolder
+import com.schmitzkr.grimreader.data.SessionKind
+import com.schmitzkr.grimreader.data.SessionRepository
 import com.schmitzkr.grimreader.data.Settings
+import com.schmitzkr.grimreader.ui.formatClock
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +62,7 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var books: BooksRepository
     @Inject lateinit var clients: ClientHolder
     @Inject lateinit var settings: Settings
+    @Inject lateinit var sessions: SessionRepository
 
     private lateinit var player: ExoPlayer
     private var session: MediaLibrarySession? = null
@@ -66,6 +70,8 @@ class PlaybackService : MediaLibraryService() {
     private var ticker: Job? = null
     private var pausedAt: Instant? = null
     private var lastSavedBookId: Long? = null
+    /** The newest position seen, for closing a session after the player has moved on. */
+    private var lastSnapshot: ProgressSnapshot? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -109,6 +115,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         ticker?.cancel()
         // Read the player here on Main; the post outlives this scope.
+        endSession()
         snapshotProgress()?.let { postProgress(it, sessionEnded = true, ioScope = detachedIo) }
         session?.run {
             player.release()
@@ -226,10 +233,22 @@ class PlaybackService : MediaLibraryService() {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
                 startTicker()
+                beginSession()
             } else {
                 stopTicker()
                 pausedAt = Instant.now()
+                // A rebuffer mid-play is not a pause; the session runs on.
+                if (!(player.playWhenReady && player.playbackState == Player.STATE_BUFFERING)) endSession()
                 scope.launch { saveProgress(sessionEnded = true) }
+            }
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val previous = lastSnapshot ?: return
+            val next = mediaItem?.bookId
+            if (next != null && next != previous.bookId) {
+                endSession(previous)
+                if (player.isPlaying) beginSession()
             }
         }
 
@@ -240,6 +259,7 @@ class PlaybackService : MediaLibraryService() {
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
                 stopTicker()
+                endSession()
                 scope.launch { saveProgress(sessionEnded = true) }
             }
         }
@@ -271,6 +291,22 @@ class PlaybackService : MediaLibraryService() {
                 ?.getLong(Extras.TRACK_DURATION_MS, 0L) ?: 0L
             player.seekTo(prev, maxOf(0L, prevDuration + target))
         }
+    }
+
+    // ── Listening sessions (Main thread: they read the player) ────────────
+
+    private fun beginSession() {
+        val s = snapshotProgress() ?: return
+        lastSnapshot = s
+        val running = sessions.current(SessionKind.AUDIO)
+        if (running?.bookId == s.bookId) return
+        if (running != null) endSession(lastSnapshot)
+        sessions.begin(SessionKind.AUDIO, s.bookId, "AUDIOBOOK", s.progress.percentage, formatClock(s.progress.positionMs))
+    }
+
+    private fun endSession(at: ProgressSnapshot? = snapshotProgress() ?: lastSnapshot) {
+        val s = at ?: return
+        sessions.end(SessionKind.AUDIO, s.progress.percentage, formatClock(s.progress.positionMs))
     }
 
     private fun startTicker() {
@@ -326,7 +362,7 @@ class PlaybackService : MediaLibraryService() {
 
     /** Safe from any thread: hops to Main for the read, posts on IO. */
     private suspend fun saveProgress(sessionEnded: Boolean) {
-        val snapshot = withContext(Dispatchers.Main.immediate) { snapshotProgress() } ?: return
+        val snapshot = withContext(Dispatchers.Main.immediate) { snapshotProgress()?.also { lastSnapshot = it } } ?: return
         postProgress(snapshot, sessionEnded)
     }
 

@@ -27,6 +27,10 @@ digital library server. Kotlin and Jetpack Compose.
 - Comic (CBX) and PDF readers: pinch to zoom, double-tap, page slider,
   right-to-left reading for manga, night mode for PDFs, progress saved to
   the server so the web reader opens on the same page
+- Reading and listening sessions recorded for the server's stats pages,
+  queued on the device when offline
+- Shake to reset a running sleep timer; libraries remember their sort and
+  filter pills
 - Floating mini player and navigation bar, neutral theme with a choice of
   accent, pure-black option for OLED screens
 
@@ -34,8 +38,7 @@ digital library server. Kotlin and Jetpack Compose.
 
 In rough order: SSO sign-in, the EPUB reader, downloads and
 offline playback, dashboard rows from the server's layout, series, authors
-and shelves, search, bookmarks, in-app updates, reading-session recording
-and the stats screen. Each has an issue in the tracker.
+and shelves, search, bookmarks, in-app updates and the stats screen. Each has an issue in the tracker.
 
 ## Building
 

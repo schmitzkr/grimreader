@@ -81,11 +81,13 @@ class SettingsViewModel @Inject constructor(
     val accent = settings.accent.stateIn(viewModelScope, SharingStarted.Eagerly, "violet")
     val oledBlack = settings.oledBlack.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val autoRewind = settings.autoRewind.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val shakeToReset = settings.shakeToReset.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { settings.setThemeMode(mode) }
     fun setAccent(accent: Accent) = viewModelScope.launch { settings.setAccent(accent.name.lowercase()) }
     fun setOledBlack(on: Boolean) = viewModelScope.launch { settings.setOledBlack(on) }
     fun setAutoRewind(on: Boolean) = viewModelScope.launch { settings.setAutoRewind(on) }
+    fun setShakeToReset(on: Boolean) = viewModelScope.launch { settings.setShakeToReset(on) }
     fun signOut() = viewModelScope.launch { auth.signOut() }
     fun changeServer() = viewModelScope.launch { auth.changeServer() }
 }
@@ -99,6 +101,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
     val accent by vm.accent.collectAsStateWithLifecycle()
     val oled by vm.oledBlack.collectAsStateWithLifecycle()
     val autoRewind by vm.autoRewind.collectAsStateWithLifecycle()
+    val shakeToReset by vm.shakeToReset.collectAsStateWithLifecycle()
     var confirm by remember { mutableStateOf<String?>(null) }
     var whatsNew by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.ensureLatestKnown() }
@@ -170,6 +173,12 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                         "Auto-rewind after a pause",
                         "Back up a few seconds on resume, more after a long pause",
                         autoRewind, vm::setAutoRewind,
+                    )
+                    HorizontalDivider()
+                    ToggleRow(
+                        "Shake to reset the sleep timer",
+                        "A firm shake restarts a running timer at the same length",
+                        shakeToReset, vm::setShakeToReset,
                     )
                 }
             }

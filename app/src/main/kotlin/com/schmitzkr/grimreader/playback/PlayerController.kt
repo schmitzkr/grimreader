@@ -12,6 +12,8 @@ import com.schmitzkr.grimreader.core.model.AudiobookChapter
 import com.schmitzkr.grimreader.core.model.AudiobookInfo
 import com.schmitzkr.grimreader.core.playback.skipTarget
 import com.schmitzkr.grimreader.data.BooksRepository
+import com.schmitzkr.grimreader.data.Settings
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -60,11 +62,14 @@ data class PlaybackState(
 class PlayerController @Inject constructor(
     private val context: Context,
     private val books: BooksRepository,
+    private val settings: Settings,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var controller: MediaController? = null
     private var positionJob: Job? = null
     private var sleepJob: Job? = null
+    private var sleepLengthMs = 0L
+    private var shake: ShakeDetector? = null
     private var info: AudiobookInfo? = null
 
     private val _state = MutableStateFlow(PlaybackState())
@@ -150,11 +155,14 @@ class PlayerController @Inject constructor(
 
     // ── Sleep timer ───────────────────────────────────────────────────────
 
-    /** Counts down, fades the last five seconds, then pauses. */
+    /** Counts down, fades the last five seconds, then pauses. A shake restarts it at the same length. */
     fun startSleepTimer(durationMs: Long) {
         sleepJob?.cancel()
+        sleepLengthMs = durationMs
+        controller?.volume = 1f
         val forBook = _state.value.bookId
         sleepJob = scope.launch {
+            listenForShake()
             var remaining = durationMs
             _state.update { it.copy(sleepRemainingMs = remaining) }
             while (remaining > 0 && isActive) {
@@ -169,6 +177,7 @@ class PlayerController @Inject constructor(
             if (isActive) {
                 controller?.pause()
                 controller?.volume = 1f
+                stopListeningForShake()
                 _state.update { it.copy(sleepRemainingMs = null) }
             }
         }
@@ -177,8 +186,24 @@ class PlayerController @Inject constructor(
     fun cancelSleepTimer() {
         sleepJob?.cancel()
         sleepJob = null
+        stopListeningForShake()
         controller?.volume = 1f
         _state.update { it.copy(sleepRemainingMs = null) }
+    }
+
+    /** The accelerometer only runs while a timer does, and only if the setting is on. */
+    private suspend fun listenForShake() {
+        if (shake != null) return
+        if (!settings.shakeToReset.first()) return
+        val detector = ShakeDetector(context) {
+            if (_state.value.sleepRemainingMs != null && sleepLengthMs > 0) startSleepTimer(sleepLengthMs)
+        }
+        if (detector.start()) shake = detector
+    }
+
+    private fun stopListeningForShake() {
+        shake?.stop()
+        shake = null
     }
 
     // ── State ─────────────────────────────────────────────────────────────

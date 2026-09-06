@@ -37,6 +37,7 @@ import androidx.lifecycle.viewModelScope
 import com.schmitzkr.grimreader.core.model.Book
 import com.schmitzkr.grimreader.core.model.CountedOption
 import com.schmitzkr.grimreader.data.BooksRepository
+import com.schmitzkr.grimreader.data.Settings
 import com.schmitzkr.grimreader.ui.components.BookGrid
 import com.schmitzkr.grimreader.ui.components.EmptyState
 import com.schmitzkr.grimreader.ui.components.ErrorState
@@ -103,7 +104,10 @@ data class LibraryUiState(
 )
 
 @HiltViewModel
-class LibraryViewModel @Inject constructor(private val books: BooksRepository) : ViewModel() {
+class LibraryViewModel @Inject constructor(
+    private val books: BooksRepository,
+    private val settings: Settings,
+) : ViewModel() {
     private var libraryId: Long = -1L
     val state = MutableStateFlow(LibraryUiState())
 
@@ -111,7 +115,10 @@ class LibraryViewModel @Inject constructor(private val books: BooksRepository) :
     fun start(id: Long) {
         if (libraryId == id) return
         libraryId = id
-        load()
+        viewModelScope.launch {
+            restoreFilters()
+            load()
+        }
         viewModelScope.launch {
             runCatching { books.filterOptions(libraryId) }.onSuccess { options ->
                 state.update {
@@ -130,9 +137,27 @@ class LibraryViewModel @Inject constructor(private val books: BooksRepository) :
 
     fun coverUrl(book: Book) = books.coverUrl(book)
 
-    fun setSort(sort: LibrarySort) { state.update { it.copy(sort = sort) }; load() }
-    fun setType(type: TypeFilter) { state.update { it.copy(type = type) }; load() }
-    fun setStatus(status: StatusFilter) { state.update { it.copy(status = status) }; load() }
+    fun setSort(sort: LibrarySort) { state.update { it.copy(sort = sort) }; load(); rememberFilters() }
+    fun setType(type: TypeFilter) { state.update { it.copy(type = type) }; load(); rememberFilters() }
+    fun setStatus(status: StatusFilter) { state.update { it.copy(status = status) }; load(); rememberFilters() }
+
+    /** Sort and pills come back the way they were left, per library. */
+    private suspend fun restoreFilters() {
+        val saved = settings.libraryFilters(libraryId) ?: return
+        if (saved.size < 3) return
+        state.update {
+            it.copy(
+                sort = LibrarySort.entries.firstOrNull { e -> e.name == saved[0] } ?: it.sort,
+                type = TypeFilter.entries.firstOrNull { e -> e.name == saved[1] } ?: it.type,
+                status = StatusFilter.entries.firstOrNull { e -> e.name == saved[2] } ?: it.status,
+            )
+        }
+    }
+
+    private fun rememberFilters() {
+        val s = state.value
+        viewModelScope.launch { settings.rememberLibraryFilters(libraryId, s.sort.name, s.type.name, s.status.name) }
+    }
 
     fun load(quiet: Boolean = false) {
         val s = state.value

@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
@@ -54,6 +55,7 @@ data class PlaybackState(
  * and keeps a [PlaybackState] flow current. Also owns the sleep timer,
  * which is app-side state the service does not need to know about.
  */
+@androidx.annotation.OptIn(UnstableApi::class)
 @Singleton
 class PlayerController @Inject constructor(
     private val context: Context,

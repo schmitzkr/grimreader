@@ -12,6 +12,10 @@ layer, playback service).
   `-m` paragraphs.
 - Releases are cut with the Release workflow (`workflow_dispatch`, semver
   version). A batch of features is a minor bump, a fix is a patch bump.
+  Version numbers continue from the Flutter app (first release here is
+  0.13.0); the workflow offsets `versionCode` past its build numbers.
+- `main` is protected: PR required, `build-and-test` and the OSV scan must
+  pass. Dependabot keeps Gradle and Actions current weekly.
 - Never name other apps or projects in issues, PRs, commits or the README.
 - Everything that talks to the server goes through `core`. The app never
   builds a request itself.

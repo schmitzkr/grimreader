@@ -41,7 +41,8 @@ jobs:
       - name: Stamp version
         run: |
           set -euo pipefail
-          sed -i "s/versionCode = [0-9]*/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
+          # Offset so version codes continue past the Flutter app's last build number.
+          sed -i "s/versionCode = [0-9]*/versionCode = $(( ${{ github.run_number }} + 100 ))/" app/build.gradle.kts
           sed -i "s/versionName = \"[^\"]*\"/versionName = \"${{ inputs.version }}\"/" app/build.gradle.kts
           grep -n "versionCode\|versionName" app/build.gradle.kts
 

@@ -1,6 +1,6 @@
 package com.schmitzkr.grimreader.playback
 
-import android.net.Uri
+import androidx.core.net.toUri
 import android.os.Bundle
 import androidx.core.os.bundleOf
 import androidx.media3.common.MediaItem
@@ -40,7 +40,7 @@ object Extras {
 }
 
 /** A folder for the browse tree. */
-fun folderItem(id: String, title: String, artworkUri: Uri? = null): MediaItem = MediaItem.Builder()
+fun folderItem(id: String, title: String, artworkUri: android.net.Uri? = null): MediaItem = MediaItem.Builder()
     .setMediaId(id)
     .setMediaMetadata(
         MediaMetadata.Builder()
@@ -60,7 +60,7 @@ fun bookEntryItem(book: Book, coverUrl: String): MediaItem = MediaItem.Builder()
         MediaMetadata.Builder()
             .setTitle(book.title)
             .setArtist(book.authors.joinToString(", "))
-            .setArtworkUri(Uri.parse(coverUrl))
+            .setArtworkUri(coverUrl.toUri())
             .setIsBrowsable(false)
             .setIsPlayable(true)
             .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
@@ -86,7 +86,7 @@ fun playableItems(
         .setTitle(title)
         .setAlbumTitle(book.title)
         .setArtist(artist)
-        .setArtworkUri(Uri.parse(coverUrl))
+        .setArtworkUri(coverUrl.toUri())
         .setIsBrowsable(false)
         .setIsPlayable(true)
         .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK_CHAPTER)

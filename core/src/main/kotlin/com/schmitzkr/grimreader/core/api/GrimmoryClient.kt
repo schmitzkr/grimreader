@@ -49,8 +49,8 @@ class SessionEvents {
 }
 
 /**
- * Builds the OkHttp client and Retrofit API for one server. Auth behaves
- * as the Flutter app's did after its refresh-storm fix:
+ * Builds the OkHttp client and Retrofit API for one server. Auth behaves as
+ * follows, chosen after a refresh storm showed what not to do:
  *
  * - every request outside the auth endpoints and `public-settings` gets the bearer;
  * - a token inside a minute of expiry is refreshed before the request;

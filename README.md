@@ -8,8 +8,8 @@ digital library server. Kotlin and Jetpack Compose.
 <br clear="left" />
 
 > [!WARNING]
-> **Early days.** This is the native rewrite of the earlier Flutter app and
-> does not have everything that one has yet. Expect rough edges and please
+> **Early days.** GrimReader is under heavy development. Releases ship
+> often and bugs are likely. Expect rough edges and please
 > [open an issue](https://github.com/schmitzkr/grimreader/issues) when you
 > hit one.
 
@@ -27,12 +27,12 @@ digital library server. Kotlin and Jetpack Compose.
 - Floating mini player and navigation bar, neutral theme with a choice of
   accent, pure-black option for OLED screens
 
-## Coming over from the Flutter app
+## Coming next
 
 In rough order: SSO sign-in, the EPUB, PDF and comic readers, downloads and
 offline playback, dashboard rows from the server's layout, series, authors
 and shelves, search, bookmarks, in-app updates, reading-session recording
-and the stats screen.
+and the stats screen. Each has an issue in the tracker.
 
 ## Building
 

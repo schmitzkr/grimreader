@@ -85,6 +85,22 @@ class Settings @Inject constructor(private val context: Context) {
         p[DEFAULT_SPEED] = speed.toDouble()
     }
 
+    // ── OIDC in flight ────────────────────────────────────────────────────
+    // Keyed by the server-issued state so a redirect that arrives in a fresh
+    // process still finds its PKCE verifier and nonce. Cleared on use.
+
+    suspend fun storeOidcPending(state: String, verifier: String, nonce: String) = store.edit { p ->
+        p[stringPreferencesKey("oidc_pending_$state")] = "$verifier\n$nonce"
+    }
+
+    suspend fun takeOidcPending(state: String): Pair<String, String>? {
+        val key = stringPreferencesKey("oidc_pending_$state")
+        val raw = store.data.first()[key] ?: return null
+        store.edit { it.remove(key) }
+        val parts = raw.split('\n')
+        return if (parts.size == 2) parts[0] to parts[1] else null
+    }
+
     // ── Session ───────────────────────────────────────────────────────────
 
     suspend fun readSession(): Session? {

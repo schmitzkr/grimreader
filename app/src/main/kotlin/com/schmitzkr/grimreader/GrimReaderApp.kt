@@ -9,6 +9,7 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import com.schmitzkr.grimreader.data.AuthRepository
 import com.schmitzkr.grimreader.data.ClientHolder
+import com.schmitzkr.grimreader.data.ProgressStore
 import com.schmitzkr.grimreader.data.SessionRepository
 import dagger.hilt.android.HiltAndroidApp
 import okhttp3.Call
@@ -21,11 +22,13 @@ class GrimReaderApp : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var clientHolder: ClientHolder
     @Inject lateinit var auth: AuthRepository
     @Inject lateinit var sessions: SessionRepository
+    @Inject lateinit var progressStore: ProgressStore
 
     override fun onCreate() {
         super.onCreate()
         auth.start()
         sessions.start()
+        progressStore.start()
     }
 
     /**

@@ -27,6 +27,8 @@ digital library server. Kotlin and Jetpack Compose.
 - Comic (CBX) and PDF readers: pinch to zoom, double-tap, page slider,
   right-to-left reading for manga, night mode for PDFs, progress saved to
   the server so the web reader opens on the same page
+- Positions saved on the device first and pushed to the server, so a lost
+  connection never loses your place; pending saves retry on their own
 - Reading and listening sessions recorded for the server's stats pages,
   queued on the device when offline
 - Your stats in Settings: this week's listening and reading, streaks with a

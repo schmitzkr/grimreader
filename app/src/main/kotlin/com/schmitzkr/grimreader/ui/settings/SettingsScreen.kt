@@ -44,6 +44,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.schmitzkr.grimreader.BuildConfig
 import com.schmitzkr.grimreader.data.AuthRepository
+import com.schmitzkr.grimreader.data.DownloadManager
+import com.schmitzkr.grimreader.ui.formatBytes
 import com.schmitzkr.grimreader.data.Settings
 import com.schmitzkr.grimreader.data.ThemeMode
 import com.schmitzkr.grimreader.data.UpdateRepository
@@ -67,7 +69,9 @@ class SettingsViewModel @Inject constructor(
     private val auth: AuthRepository,
     private val settings: Settings,
     private val updates: UpdateRepository,
+    downloads: DownloadManager,
 ) : ViewModel() {
+    val downloadStates = downloads.state
     val user = auth.currentUser
     val latestRelease = updates.latest
     val updateState = updates.state
@@ -94,7 +98,7 @@ class SettingsViewModel @Inject constructor(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onOpenStats: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
     val user by vm.user.collectAsStateWithLifecycle()
     val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
@@ -164,6 +168,20 @@ fun SettingsScreen(onOpenStats: () -> Unit, vm: SettingsViewModel = hiltViewMode
                     }
                     ToggleRow("Pure black in dark mode", "Deeper blacks on OLED screens", oled, vm::setOledBlack)
                 }
+            }
+        }
+
+        item { SectionLabel("Storage", Modifier.padding(0.dp)) }
+        item {
+            val downloads by vm.downloadStates.collectAsStateWithLifecycle()
+            val done = downloads.values.filter { it.isDone }
+            GrimCard(Modifier.fillMaxWidth()) {
+                Item(
+                    "Downloads",
+                    if (done.isEmpty()) "Nothing on this device yet"
+                    else "${done.size} audiobook${if (done.size == 1) "" else "s"} · ${formatBytes(done.sumOf { it.bytes })}",
+                    onOpenDownloads,
+                )
             }
         }
 

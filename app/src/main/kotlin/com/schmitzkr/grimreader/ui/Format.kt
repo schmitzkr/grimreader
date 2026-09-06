@@ -22,6 +22,17 @@ fun formatShort(ms: Long): String {
     return if (h > 0) "${h}h ${m}m" else "${m}m"
 }
 
+/** `512 B`, `1.5 KB`, `312 MB`, `2.3 GB`. */
+fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val units = listOf("KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unit = -1
+    while (value >= 1024 && unit < units.size - 1) { value /= 1024; unit++ }
+    val text = if (value >= 100 || value == Math.floor(value)) "%.0f".format(value) else "%.1f".format(value)
+    return "$text ${units[unit]}"
+}
+
 fun formatSpeed(speed: Float): String {
     val s = "%.2f".format(speed)
     return (if (s.endsWith("0")) "%.1f".format(speed) else s) + "×"

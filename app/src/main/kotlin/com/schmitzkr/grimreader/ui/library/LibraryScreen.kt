@@ -37,7 +37,12 @@ import androidx.lifecycle.viewModelScope
 import com.schmitzkr.grimreader.core.model.Book
 import com.schmitzkr.grimreader.core.model.CountedOption
 import com.schmitzkr.grimreader.data.BooksRepository
+import com.schmitzkr.grimreader.data.DownloadManager
 import com.schmitzkr.grimreader.data.Settings
+import androidx.compose.material.icons.rounded.DownloadDone
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import com.schmitzkr.grimreader.ui.components.BookGrid
 import com.schmitzkr.grimreader.ui.components.EmptyState
 import com.schmitzkr.grimreader.ui.components.ErrorState
@@ -101,13 +106,22 @@ data class LibraryUiState(
     val status: StatusFilter = StatusFilter.ALL,
     val statusCounts: Map<StatusFilter, Int> = emptyMap(),
     val typeCounts: Map<TypeFilter, Int> = emptyMap(),
+    /** Client-side: only books on this device. */
+    val downloadedOnly: Boolean = false,
 )
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val books: BooksRepository,
     private val settings: Settings,
+    downloads: DownloadManager,
 ) : ViewModel() {
+    val downloadedIds = downloads.state
+        .map { m -> m.filterValues { it.isDone }.keys }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), downloads.downloadedIds())
+
+    fun setDownloadedOnly(on: Boolean) = state.update { it.copy(downloadedOnly = on) }
+
     private var libraryId: Long = -1L
     val state = MutableStateFlow(LibraryUiState())
 
@@ -187,7 +201,9 @@ fun LibraryScreen(
 ) {
     LaunchedEffect(libraryId) { vm.start(libraryId) }
     val state by vm.state.collectAsStateWithLifecycle()
+    val downloaded by vm.downloadedIds.collectAsStateWithLifecycle()
     var sortMenu by remember { mutableStateOf(false) }
+    val shown = if (state.downloadedOnly) state.books.filter { it.id in downloaded } else state.books
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(
@@ -245,12 +261,20 @@ fun LibraryScreen(
                     count = count,
                 )
             }
+            val onDevice = state.books.count { it.id in downloaded }
+            if (onDevice > 0 || state.downloadedOnly) FilterPill(
+                label = "Downloaded",
+                selected = state.downloadedOnly,
+                onClick = { vm.setDownloadedOnly(!state.downloadedOnly) },
+                icon = Icons.Rounded.DownloadDone,
+                count = onDevice,
+            )
         }
         when {
             state.loading -> LoadingState()
             state.error != null -> ErrorState(state.error!!, onRetry = { vm.load() })
-            state.books.isEmpty() -> EmptyState(
-                when (state.status) {
+            shown.isEmpty() -> EmptyState(
+                if (state.downloadedOnly) "Nothing downloaded here yet." else when (state.status) {
                     StatusFilter.ALL -> "No books here."
                     StatusFilter.IN_PROGRESS -> "Nothing in progress here yet."
                     StatusFilter.UNREAD -> "Everything here has been started."
@@ -258,10 +282,11 @@ fun LibraryScreen(
                 },
             )
             else -> BookGrid(
-                books = state.books,
+                books = shown,
                 coverUrl = vm::coverUrl,
                 onOpen = onOpenBook,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 160.dp),
+                downloadedIds = downloaded,
             )
         }
     }

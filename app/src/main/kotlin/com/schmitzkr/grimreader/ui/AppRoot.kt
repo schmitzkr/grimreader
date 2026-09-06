@@ -48,6 +48,7 @@ import com.schmitzkr.grimreader.ui.player.MiniPlayer
 import com.schmitzkr.grimreader.ui.player.PlayerScreen
 import com.schmitzkr.grimreader.ui.settings.SettingsScreen
 import com.schmitzkr.grimreader.ui.stats.StatsScreen
+import com.schmitzkr.grimreader.ui.downloads.DownloadsScreen
 import com.schmitzkr.grimreader.ui.browse.AuthorTitledList
 import com.schmitzkr.grimreader.ui.browse.BookListViewModel
 import com.schmitzkr.grimreader.ui.browse.BrowseScreen
@@ -82,6 +83,7 @@ object Routes {
     fun magicShelf(id: Long) = "magic/$id"
 
     const val STATS = "stats"
+    const val DOWNLOADS = "downloads"
     const val READER = "reader/{format}/{id}"
     fun reader(format: PageFormat, id: Long) = "reader/${format.name.lowercase()}/$id"
 }
@@ -183,7 +185,10 @@ private fun MainShell(vm: RootViewModel) {
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
-            composable(Routes.SETTINGS) { SettingsScreen(onOpenStats = { nav.navigate(Routes.STATS) }) }
+            composable(Routes.SETTINGS) {
+                SettingsScreen(onOpenStats = { nav.navigate(Routes.STATS) }, onOpenDownloads = { nav.navigate(Routes.DOWNLOADS) })
+            }
+            composable(Routes.DOWNLOADS) { DownloadsScreen(onBack = { nav.popBackStack() }, onOpenBook = { nav.navigate(Routes.book(it)) }) }
             composable(Routes.STATS) { StatsScreen(onBack = { nav.popBackStack() }) }
             composable(
                 Routes.LIBRARY,

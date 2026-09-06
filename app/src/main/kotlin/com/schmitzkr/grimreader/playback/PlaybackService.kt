@@ -26,6 +26,9 @@ import com.schmitzkr.grimreader.core.playback.audiobookPercentage
 import com.schmitzkr.grimreader.core.playback.trackRelativeMs
 import com.schmitzkr.grimreader.data.BooksRepository
 import com.schmitzkr.grimreader.data.ClientHolder
+import com.schmitzkr.grimreader.data.DownloadManager
+import androidx.media3.datasource.DefaultDataSource
+import android.net.Uri
 import com.schmitzkr.grimreader.data.SessionKind
 import com.schmitzkr.grimreader.data.SessionRepository
 import com.schmitzkr.grimreader.data.Settings
@@ -63,6 +66,7 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var clients: ClientHolder
     @Inject lateinit var settings: Settings
     @Inject lateinit var sessions: SessionRepository
+    @Inject lateinit var downloads: DownloadManager
 
     private lateinit var player: ExoPlayer
     private var session: MediaLibrarySession? = null
@@ -76,8 +80,9 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         val callFactory = okhttp3.Call.Factory { request -> clients.current().okHttp.newCall(request) }
+        // DefaultDataSource keeps file:// for downloads and hands http(s) to OkHttp.
         val mediaSourceFactory = DefaultMediaSourceFactory(this)
-            .setDataSourceFactory(OkHttpDataSource.Factory(callFactory))
+            .setDataSourceFactory(DefaultDataSource.Factory(this, OkHttpDataSource.Factory(callFactory)))
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
@@ -175,14 +180,17 @@ class PlaybackService : MediaLibraryService() {
             }
             // The previous book's last position goes out before the switch.
             saveProgress(sessionEnded = true)
-            val book = books.book(bookId)
-            val info = books.audiobookInfo(bookId)
+            // A downloaded book plays from disk with no network at all.
+            val local = downloads.record(bookId)
+            val book = local?.book ?: books.book(bookId)
+            val info = local?.info ?: books.audiobookInfo(bookId)
             val progress = runCatching { books.audiobookProgress(bookId) }.getOrNull()
+            fun fileUrl(file: java.io.File?): String? = file?.let { Uri.fromFile(it).toString() }
             val items = playableItems(
                 book, info,
-                coverUrl = books.coverUrl(book),
-                streamUrl = books.streamUrl(bookId),
-                trackUrl = { books.trackStreamUrl(bookId, it) },
+                coverUrl = fileUrl(downloads.localCover(bookId)) ?: books.coverUrl(book),
+                streamUrl = (if (local != null) fileUrl(downloads.localAudio(bookId, null)) else null) ?: books.streamUrl(bookId),
+                trackUrl = { i -> (if (local != null) fileUrl(downloads.localAudio(bookId, i)) else null) ?: books.trackStreamUrl(bookId, i) },
             )
             val index: Int
             val position: Long

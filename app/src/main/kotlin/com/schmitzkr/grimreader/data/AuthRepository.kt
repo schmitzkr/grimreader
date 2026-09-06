@@ -3,7 +3,9 @@ package com.schmitzkr.grimreader.data
 import com.schmitzkr.grimreader.core.api.GrimmoryClient
 import com.schmitzkr.grimreader.core.api.LoginRequest
 import com.schmitzkr.grimreader.core.api.RefreshRequest
+import android.net.Uri
 import com.schmitzkr.grimreader.core.model.CurrentUser
+import com.schmitzkr.grimreader.core.model.OidcProviderDetails
 import com.schmitzkr.grimreader.core.model.PublicSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +30,7 @@ class AuthRepository @Inject constructor(
     private val settings: Settings,
     private val sessionStore: PersistedSessionStore,
     private val clients: ClientHolder,
+    private val oidc: OidcFlow,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -80,6 +83,34 @@ class AuthRepository @Inject constructor(
         client().storeTokens(tokens)
         _state.value = AppState.SignedIn
         refreshCurrentUser()
+    }
+
+    /** The last SSO failure, for the login screen to show; cleared on the next attempt. */
+    private val _oidcError = MutableStateFlow<String?>(null)
+    val oidcError: StateFlow<String?> = _oidcError.asStateFlow()
+
+    fun reportOidcFailure(error: Throwable) {
+        _oidcError.value = error.message ?: "Sign-in failed"
+    }
+
+    fun clearOidcFailure() {
+        _oidcError.value = null
+    }
+
+    /** Opens the identity provider in the browser; the redirect comes back through [completeOidc]. */
+    suspend fun beginOidc(provider: OidcProviderDetails) = oidc.begin(provider)
+
+    /**
+     * Finishes an SSO sign-in from the redirect the browser sent back. False
+     * when the redirect is not ours or its state is unknown (a stale replay).
+     */
+    suspend fun completeOidc(redirect: Uri): Boolean {
+        val body = oidc.callbackFor(redirect) ?: return false
+        val tokens = client().api.oidcCallback(body)
+        client().storeTokens(tokens)
+        _state.value = AppState.SignedIn
+        refreshCurrentUser()
+        return true
     }
 
     suspend fun refreshCurrentUser() {

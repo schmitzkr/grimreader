@@ -40,8 +40,8 @@
                 <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-            <!-- OIDC redirect back from the browser; distinct from the
-                 Flutter app's scheme so both can coexist. -->
+            <!-- OIDC redirect back from the browser. The server's mobile
+                 redirect allow-list must include this exact URI. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

@@ -18,8 +18,6 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        // A different id from the Flutter app on purpose, so both can be
-        // installed side by side while this one catches up.
         applicationId = "is.schmitzkr.grimreader"
         minSdk = 26
         targetSdk = 36

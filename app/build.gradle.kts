@@ -87,6 +87,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.browser)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.datasource.okhttp)

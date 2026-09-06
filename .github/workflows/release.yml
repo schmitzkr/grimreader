@@ -1,10 +1,10 @@
 name: Release
 
-# Cut a signed release: workflow_dispatch with a semver version. Builds the
-# APK, tags vX.Y.Z, publishes a GitHub Release with the APK attached, and
-# opens a PR bumping the version in app/build.gradle.kts. Secrets:
-# KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD, and optionally
-# RELEASE_PUSH_TOKEN (a PAT that may open PRs), same names as the Flutter app.
+# Cut a signed release: workflow_dispatch with a semver version. Stamps the
+# version into the build (the tag is the version of record; the file in the
+# repo is a placeholder), builds the APK, tags vX.Y.Z and publishes a GitHub
+# Release with the APK attached. No commit is made, so no push token is
+# needed. Secrets: KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD.
 
 on:
   workflow_dispatch:
@@ -74,21 +74,3 @@ jobs:
           TAG="v${{ inputs.version }}"
           gh release create "$TAG" grimreader.apk grimreader-mapping.zip \
             --title "$TAG" --generate-notes --target "${{ github.sha }}"
-
-      # With a personal token the bump PR gets its own CI run; with the
-      # built-in token it still opens, GitHub just does not run checks on it.
-      - name: Open version bump PR
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN || github.token }}
-        run: |
-          set -euo pipefail
-          BRANCH="release/v${{ inputs.version }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          git add app/build.gradle.kts
-          git commit -m "chore: bump version to ${{ inputs.version }} (${{ github.run_number }})"
-          git push -u origin "$BRANCH"
-          gh pr create --base main --head "$BRANCH" \
-            --title "chore: bump version to ${{ inputs.version }}" \
-            --body "Version bump from the v${{ inputs.version }} release run."

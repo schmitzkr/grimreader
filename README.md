@@ -1,4 +1,4 @@
-<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="GrimReader app icon" width="96" align="left" />
+<img src="assets/icon/icon.png" alt="GrimReader app icon" width="120" align="left" />
 
 ### GrimReader
 
@@ -48,8 +48,14 @@ Needs JDK 21 and an Android SDK with platform 36.
 maths) with no Android in it; `app` is the Compose app.
 
 Releases come from the Release workflow (`workflow_dispatch` with a version),
-which signs with the keystore in the repository secrets, tags, publishes the
-APK on GitHub Releases and opens a version-bump PR.
+which stamps that version into the build, signs with the keystore in the
+repository secrets, tags `vX.Y.Z` and publishes the APK on GitHub Releases.
+The version of record is the tag; `app/build.gradle.kts` only holds a
+placeholder, so no bump commit is needed.
+
+The launcher icon is generated from `assets/icon/` (`icon.png` for the
+README and stores, `icon_foreground.png` and `icon_monochrome.png` for the
+adaptive icon layers in `app/src/main/res`).
 
 ## Licence
 

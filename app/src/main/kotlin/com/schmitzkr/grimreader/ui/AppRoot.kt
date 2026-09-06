@@ -47,17 +47,36 @@ import com.schmitzkr.grimreader.ui.onboarding.ServerUrlScreen
 import com.schmitzkr.grimreader.ui.player.MiniPlayer
 import com.schmitzkr.grimreader.ui.player.PlayerScreen
 import com.schmitzkr.grimreader.ui.settings.SettingsScreen
+import com.schmitzkr.grimreader.ui.browse.AuthorTitledList
+import com.schmitzkr.grimreader.ui.browse.BookListViewModel
+import com.schmitzkr.grimreader.ui.browse.BrowseScreen
+import com.schmitzkr.grimreader.ui.browse.TitledBookList
+import com.schmitzkr.grimreader.ui.search.SearchScreen
+import android.net.Uri
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.rounded.Explore
+import androidx.hilt.navigation.compose.hiltViewModel
 
 object Routes {
     const val HOME = "home"
     const val LIBRARIES = "libraries"
+    const val BROWSE = "browse"
     const val SETTINGS = "settings"
     const val LIBRARY = "library/{id}"
     const val BOOK = "book/{id}"
     const val PLAYER = "player"
+    const val SEARCH = "search"
+    const val SERIES = "series/{name}"
+    const val AUTHOR = "author/{id}"
+    const val SHELF = "shelf/{id}"
+    const val MAGIC_SHELF = "magic/{id}"
 
     fun library(id: Long) = "library/$id"
     fun book(id: Long) = "book/$id"
+    fun series(name: String) = "series/${Uri.encode(name)}"
+    fun author(id: Long) = "author/$id"
+    fun shelf(id: Long) = "shelf/$id"
+    fun magicShelf(id: Long) = "magic/$id"
 }
 
 /** Picks the screen from the auth state; everything signed-in lives in [MainShell]. */
@@ -79,6 +98,7 @@ fun AppRoot(vm: RootViewModel) {
 private val tabs = listOf(
     NavItem(Routes.HOME, "Home", Icons.Outlined.Home, Icons.Rounded.Home),
     NavItem(Routes.LIBRARIES, "Libraries", Icons.Outlined.LibraryBooks, Icons.Rounded.LibraryBooks),
+    NavItem(Routes.BROWSE, "Browse", Icons.Outlined.Explore, Icons.Rounded.Explore),
     NavItem(Routes.SETTINGS, "Settings", Icons.Outlined.Settings, Icons.Rounded.Settings),
 )
 
@@ -97,7 +117,59 @@ private fun MainShell(vm: RootViewModel) {
             startDestination = Routes.HOME,
             modifier = Modifier.fillMaxSize(),
         ) {
-            composable(Routes.HOME) { HomeScreen(onOpenBook = { nav.navigate(Routes.book(it)) }) }
+            composable(Routes.HOME) {
+                HomeScreen(
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
+                    onOpenSearch = { nav.navigate(Routes.SEARCH) },
+                    onOpenMagicShelf = { nav.navigate(Routes.magicShelf(it)) },
+                )
+            }
+            composable(Routes.BROWSE) {
+                BrowseScreen(
+                    onOpenSeries = { nav.navigate(Routes.series(it)) },
+                    onOpenAuthor = { nav.navigate(Routes.author(it)) },
+                    onOpenShelf = { nav.navigate(Routes.shelf(it)) },
+                    onOpenMagicShelf = { nav.navigate(Routes.magicShelf(it)) },
+                )
+            }
+            composable(Routes.SEARCH) {
+                SearchScreen(onBack = { nav.popBackStack() }, onOpenBook = { nav.navigate(Routes.book(it)) })
+            }
+            composable(Routes.SERIES, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
+                val name = Uri.decode(entry.arguments!!.getString("name")!!)
+                TitledBookList(
+                    title = name,
+                    onBack = { nav.popBackStack() },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
+                    vm = hiltViewModel(key = "series-$name"),
+                    start = { it.seriesBooks(name) },
+                )
+            }
+            composable(Routes.AUTHOR, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+                val id = entry.arguments!!.getLong("id")
+                val vm: BookListViewModel = hiltViewModel(key = "author-$id")
+                AuthorTitledList(id = id, vm = vm, onBack = { nav.popBackStack() }, onOpenBook = { nav.navigate(Routes.book(it)) })
+            }
+            composable(Routes.SHELF, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+                val id = entry.arguments!!.getLong("id")
+                TitledBookList(
+                    title = "Shelf",
+                    onBack = { nav.popBackStack() },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
+                    vm = hiltViewModel(key = "shelf-$id"),
+                    start = { it.shelfBooks(id) },
+                )
+            }
+            composable(Routes.MAGIC_SHELF, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+                val id = entry.arguments!!.getLong("id")
+                TitledBookList(
+                    title = "Magic shelf",
+                    onBack = { nav.popBackStack() },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
+                    vm = hiltViewModel(key = "magic-$id"),
+                    start = { it.magicShelfBooks(id) },
+                )
+            }
             composable(Routes.LIBRARIES) {
                 LibrariesScreen(
                     onOpenLibrary = { nav.navigate(Routes.library(it)) },

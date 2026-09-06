@@ -2,16 +2,24 @@ package com.schmitzkr.grimreader.data
 
 import com.schmitzkr.grimreader.core.api.GrimmoryClient
 import com.schmitzkr.grimreader.core.api.audiobookProgressBody
+import com.schmitzkr.grimreader.core.api.bookmarkBody
 import com.schmitzkr.grimreader.core.api.inProgressOrder
 import com.schmitzkr.grimreader.core.api.parseAudiobookProgress
 import com.schmitzkr.grimreader.core.api.StatusRequest
 import com.schmitzkr.grimreader.core.api.RatingRequest
 import com.schmitzkr.grimreader.core.model.AudiobookInfo
 import com.schmitzkr.grimreader.core.model.AudiobookProgress
+import com.schmitzkr.grimreader.core.model.Author
 import com.schmitzkr.grimreader.core.model.Book
+import com.schmitzkr.grimreader.core.model.Bookmark
 import com.schmitzkr.grimreader.core.model.DashboardConfig
 import com.schmitzkr.grimreader.core.model.FilterOptions
 import com.schmitzkr.grimreader.core.model.Library
+import com.schmitzkr.grimreader.core.model.MagicShelf
+import com.schmitzkr.grimreader.core.model.Series
+import com.schmitzkr.grimreader.core.model.Shelf
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -83,10 +91,42 @@ class BooksRepository @Inject constructor(private val clients: ClientHolder) {
 
     suspend fun recentlyAdded(limit: Int = 20): List<Book> = api.recentlyAdded(limit)
 
-    suspend fun randomBooks(size: Int = 20): List<Book> = api.randomBooks(size)
+    suspend fun randomBooks(size: Int = 20, libraryId: Long? = null): List<Book> = api.randomBooks(size, libraryId)
 
     suspend fun dashboardConfig(): DashboardConfig? =
         runCatching { api.currentUser().userSettings?.dashboardConfig }.getOrNull()
+
+    // ── Browse ────────────────────────────────────────────────────────────
+
+    suspend fun series(): List<Series> = api.series().content
+    suspend fun seriesBooks(name: String): List<Book> = api.seriesBooks(name).content
+    suspend fun authors(): List<Author> = api.authors().content
+    suspend fun author(id: Long): Author = api.author(id)
+    suspend fun booksByAuthor(name: String): List<Book> = api.books(authors = listOf(name), sort = "title", dir = "asc").content
+    suspend fun shelves(): List<Shelf> = api.shelves()
+    suspend fun shelfBooks(shelfId: Long): List<Book> = api.books(shelfId = shelfId, sort = "title", dir = "asc").content
+    suspend fun magicShelves(): List<MagicShelf> = api.magicShelves()
+    suspend fun magicShelfBooks(id: Long, size: Int = 100): List<Book> = api.magicShelfBooks(id, size = size).content
+
+    fun authorPhotoUrl(authorId: Long): String = client().authorPhotoUrl(authorId)
+
+    // ── Bookmarks ─────────────────────────────────────────────────────────
+
+    suspend fun bookmarks(bookId: Long): List<Bookmark> = api.bookmarks(bookId)
+
+    suspend fun addBookmark(bookId: Long, title: String?, positionMs: Long, trackIndex: Int?): Bookmark =
+        api.createBookmark(bookmarkBody(bookId, title, positionMs = positionMs, trackIndex = trackIndex))
+
+    suspend fun renameBookmark(bookmark: Bookmark, title: String) {
+        api.updateBookmark(bookmark.id, buildJsonObject {
+            put("title", title)
+            bookmark.cfi?.let { put("cfi", it) }
+        })
+    }
+
+    suspend fun deleteBookmark(id: Long) {
+        api.deleteBookmark(id)
+    }
 
     suspend fun updateReadStatus(bookId: Long, status: String) {
         api.updateReadStatus(bookId, StatusRequest(status))

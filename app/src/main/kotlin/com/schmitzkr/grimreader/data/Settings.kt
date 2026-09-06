@@ -51,6 +51,21 @@ class Settings @Inject constructor(private val context: Context) {
     suspend fun setOledBlack(on: Boolean) = store.edit { it[OLED_BLACK] = on }
     suspend fun setAutoRewind(on: Boolean) = store.edit { it[AUTO_REWIND] = on }
 
+    suspend fun lastUpdateCheck(): Instant? = store.data.first()[LAST_UPDATE_CHECK]?.let { Instant.ofEpochMilli(it) }
+    suspend fun setLastUpdateCheck(at: Instant) = store.edit { it[LAST_UPDATE_CHECK] = at.toEpochMilli() }
+
+    val recentSearches: Flow<List<String>> = store.data.map { p ->
+        p[RECENT_SEARCHES]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
+    }
+
+    suspend fun rememberSearch(query: String) = store.edit { p ->
+        val current = p[RECENT_SEARCHES]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
+        p[RECENT_SEARCHES] = (listOf(query.trim()) + current.filter { !it.equals(query.trim(), ignoreCase = true) })
+            .take(10).joinToString("\n")
+    }
+
+    suspend fun clearSearches() = store.edit { it.remove(RECENT_SEARCHES) }
+
     suspend fun speedFor(bookId: Long): Float = store.data.first().let { p ->
         (p[doublePreferencesKey("speed_$bookId")] ?: p[DEFAULT_SPEED] ?: 1.0).toFloat()
     }
@@ -89,6 +104,8 @@ class Settings @Inject constructor(private val context: Context) {
         val ACCESS_TOKEN = stringPreferencesKey("access_token")
         val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
         val EXPIRES_AT = longPreferencesKey("expires_at")
+        val LAST_UPDATE_CHECK = longPreferencesKey("last_update_check")
+        val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
     }
 }
 

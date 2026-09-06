@@ -2,6 +2,9 @@ package com.schmitzkr.grimreader.data
 
 import com.schmitzkr.grimreader.core.api.GrimmoryClient
 import com.schmitzkr.grimreader.core.api.audiobookProgressBody
+import com.schmitzkr.grimreader.core.api.epubProgressBody
+import com.schmitzkr.grimreader.core.api.parseEpubProgress
+import com.schmitzkr.grimreader.core.model.EpubProgress
 import com.schmitzkr.grimreader.core.api.bookmarkBody
 import com.schmitzkr.grimreader.core.api.inProgressOrder
 import com.schmitzkr.grimreader.core.api.pageProgressBody
@@ -152,6 +155,18 @@ class BooksRepository @Inject constructor(
 
     suspend fun audiobookInfo(bookId: Long): AudiobookInfo = api.audiobookInfo(bookId)
 
+    // ── EPUB ──────────────────────────────────────────────────────────────
+
+    suspend fun epubProgress(bookId: Long): EpubProgress? =
+        loadProgress(KIND_EPUB, bookId)?.let { parseEpubProgress(it, client().json) }
+
+    suspend fun saveEpubProgress(bookId: Long, progress: EpubProgress, bookFileId: Long?) {
+        progressStore.save(KIND_EPUB, bookId, epubProgressBody(progress, bookFileId, client().json))
+    }
+
+    suspend fun addEpubBookmark(bookId: Long, title: String?, cfi: String): Bookmark =
+        api.createBookmark(bookmarkBody(bookId, title, cfi = cfi))
+
     // ── Page readers (comics and PDFs) ────────────────────────────────────
 
     suspend fun pageProgress(bookId: Long, format: PageFormat): PageProgress? =
@@ -220,5 +235,6 @@ class BooksRepository @Inject constructor(
 
     companion object {
         const val KIND_AUDIOBOOK = "audiobook"
+        const val KIND_EPUB = "epub"
     }
 }

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -89,6 +90,12 @@ class Settings @Inject constructor(private val context: Context) {
     suspend fun comicRtl(bookId: Long): Boolean = store.data.first()[booleanPreferencesKey("comic_rtl_$bookId")] ?: false
     suspend fun setComicRtl(bookId: Long, rtl: Boolean) = store.edit { it[booleanPreferencesKey("comic_rtl_$bookId")] = rtl }
 
+    /** The EPUB reader's page theme (`light`, `sepia`, `dark`); null follows the app theme. */
+    suspend fun epubTheme(): String? = store.data.first()[EPUB_THEME]
+    suspend fun setEpubTheme(name: String) = store.edit { it[EPUB_THEME] = name }
+    suspend fun epubFontPct(): Int = store.data.first()[EPUB_FONT_PCT] ?: 100
+    suspend fun setEpubFontPct(pct: Int) = store.edit { it[EPUB_FONT_PCT] = pct }
+
     /** One night-mode preference shared by the readers. */
     suspend fun readerNight(): Boolean = store.data.first()[READER_NIGHT] ?: false
     suspend fun setReaderNight(on: Boolean) = store.edit { it[READER_NIGHT] = on }
@@ -134,6 +141,8 @@ class Settings @Inject constructor(private val context: Context) {
         val LAST_UPDATE_CHECK = longPreferencesKey("last_update_check")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
         val READER_NIGHT = booleanPreferencesKey("reader_night")
+        val EPUB_THEME = stringPreferencesKey("epub_theme")
+        val EPUB_FONT_PCT = intPreferencesKey("epub_font_pct")
         val SHAKE_TO_RESET = booleanPreferencesKey("shake_to_reset")
         val PENDING_SESSIONS = stringPreferencesKey("pending_sessions")
     }

@@ -107,6 +107,7 @@ fun BookDetailScreen(
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
     onOpenReader: (PageFormat) -> Unit,
+    onOpenEpub: () -> Unit,
     vm: BookDetailViewModel = hiltViewModel(key = "book-$bookId"),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -221,7 +222,14 @@ fun BookDetailScreen(
                         }
                     } else {
                         val pageFormat = PageFormat.entries.firstOrNull { book.primaryFileType == it.bookType || book.fileIdFor(it) != null }
-                        if (pageFormat != null) {
+                        val hasEpub = book.primaryFileType == "EPUB" || book.files.any { it.bookType == "EPUB" }
+                        if (hasEpub) {
+                            Button(onClick = onOpenEpub, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                                Icon(Icons.AutoMirrored.Rounded.MenuBook, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if ((progress ?: 0.0) > 0) "Continue reading" else "Read")
+                            }
+                        } else if (pageFormat != null) {
                             Button(onClick = { onOpenReader(pageFormat) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                                 Icon(Icons.AutoMirrored.Rounded.MenuBook, null)
                                 Spacer(Modifier.width(8.dp))

@@ -54,6 +54,7 @@ import com.schmitzkr.grimreader.ui.browse.BookListViewModel
 import com.schmitzkr.grimreader.ui.browse.BrowseScreen
 import com.schmitzkr.grimreader.ui.browse.TitledBookList
 import com.schmitzkr.grimreader.ui.search.SearchScreen
+import com.schmitzkr.grimreader.ui.reader.EpubReaderScreen
 import com.schmitzkr.grimreader.ui.reader.PageReaderScreen
 import com.schmitzkr.grimreader.core.model.PageFormat
 import android.net.Uri
@@ -84,6 +85,8 @@ object Routes {
 
     const val STATS = "stats"
     const val DOWNLOADS = "downloads"
+    const val EPUB = "epub/{id}"
+    fun epub(id: Long) = "epub/$id"
     const val READER = "reader/{format}/{id}"
     fun reader(format: PageFormat, id: Long) = "reader/${format.name.lowercase()}/$id"
 }
@@ -209,9 +212,13 @@ private fun MainShell(vm: RootViewModel) {
                     onBack = { nav.popBackStack() },
                     onOpenPlayer = { nav.navigate(Routes.PLAYER) },
                     onOpenReader = { format -> nav.navigate(Routes.reader(format, entry.arguments!!.getLong("id"))) },
+                    onOpenEpub = { nav.navigate(Routes.epub(entry.arguments!!.getLong("id"))) },
                 )
             }
             composable(Routes.PLAYER) { PlayerScreen(onBack = { nav.popBackStack() }) }
+            composable(Routes.EPUB, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+                EpubReaderScreen(bookId = entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
+            }
             composable(
                 Routes.READER,
                 arguments = listOf(

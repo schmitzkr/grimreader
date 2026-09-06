@@ -31,6 +31,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,8 +74,12 @@ fun BookCover(
     modifier: Modifier = Modifier,
     cornerRadius: Int = 12,
     showProgress: Boolean = true,
+    fallbackUrl: String? = null,
 ) {
     val shape = RoundedCornerShape(cornerRadius.dp)
+    // An audiobook's own art may not exist on the server; fall back to the
+    // book cover once the first request fails.
+    var useFallback by remember(coverUrl) { mutableStateOf(false) }
     Box(
         modifier
             .aspectRatio(book.coverAspectRatio)
@@ -79,9 +87,10 @@ fun BookCover(
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         AsyncImage(
-            model = coverUrl,
+            model = if (useFallback && fallbackUrl != null) fallbackUrl else coverUrl,
             contentDescription = book.title,
             contentScale = ContentScale.Crop,
+            onError = { if (fallbackUrl != null && !useFallback) useFallback = true },
             modifier = Modifier.fillMaxSize(),
         )
         if (!showProgress) return@Box
@@ -117,9 +126,10 @@ fun BookTile(
     coverUrl: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    fallbackUrl: String? = null,
 ) {
     Column(modifier.clickable(onClick = onClick)) {
-        BookCover(book, coverUrl, Modifier.fillMaxWidth())
+        BookCover(book, coverUrl, Modifier.fillMaxWidth(), fallbackUrl = fallbackUrl)
         Spacer(Modifier.height(6.dp))
         Text(
             book.title,
@@ -148,6 +158,7 @@ fun BookGrid(
     onOpen: (Long) -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp),
+    fallbackUrl: ((Book) -> String?)? = null,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 120.dp),
@@ -157,7 +168,7 @@ fun BookGrid(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         items(books, key = { it.id }) { book ->
-            BookTile(book, coverUrl(book), onClick = { onOpen(book.id) })
+            BookTile(book, coverUrl(book), onClick = { onOpen(book.id) }, fallbackUrl = fallbackUrl?.invoke(book))
         }
     }
 }

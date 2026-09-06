@@ -65,6 +65,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun coverUrl(book: Book) = books.coverUrl(book)
+    fun fallbackCoverUrl(book: Book) = if (book.isAudiobook) books.fallbackCoverUrl(book) else null
 
     fun load(quiet: Boolean = false) {
         viewModelScope.launch {
@@ -137,6 +138,7 @@ fun HomeScreen(onOpenBook: (Long) -> Unit, vm: HomeViewModel = hiltViewModel()) 
                                 vm.coverUrl(book),
                                 onClick = { onOpenBook(book.id) },
                                 modifier = Modifier.width(if (book.isAudiobook) 132.dp else 112.dp),
+                                fallbackUrl = vm.fallbackCoverUrl(book),
                             )
                         }
                     }

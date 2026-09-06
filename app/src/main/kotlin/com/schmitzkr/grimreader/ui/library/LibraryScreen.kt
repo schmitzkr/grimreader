@@ -129,6 +129,7 @@ class LibraryViewModel @Inject constructor(private val books: BooksRepository) :
     }
 
     fun coverUrl(book: Book) = books.coverUrl(book)
+    fun fallbackCoverUrl(book: Book): String? = if (book.isAudiobook) books.fallbackCoverUrl(book) else null
 
     fun setSort(sort: LibrarySort) { state.update { it.copy(sort = sort) }; load() }
     fun setType(type: TypeFilter) { state.update { it.copy(type = type) }; load() }
@@ -237,6 +238,7 @@ fun LibraryScreen(
                 coverUrl = vm::coverUrl,
                 onOpen = onOpenBook,
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 160.dp),
+                fallbackUrl = vm::fallbackCoverUrl,
             )
         }
     }

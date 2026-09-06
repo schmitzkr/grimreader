@@ -94,7 +94,7 @@ class SettingsViewModel @Inject constructor(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(onOpenStats: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
     val user by vm.user.collectAsStateWithLifecycle()
     val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
@@ -126,6 +126,8 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                     )
                     HorizontalDivider()
                     Item(title = "Server", subtitle = serverUrl ?: "Not set")
+                    HorizontalDivider()
+                    Item("Your stats", "Streaks, this week's listening and reading, books in progress", onOpenStats)
                 }
             }
         }

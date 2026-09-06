@@ -29,6 +29,8 @@ digital library server. Kotlin and Jetpack Compose.
   the server so the web reader opens on the same page
 - Reading and listening sessions recorded for the server's stats pages,
   queued on the device when offline
+- Your stats in Settings: this week's listening and reading, streaks with a
+  past-year grid, last seven days of listening, audiobooks in progress
 - Shake to reset a running sleep timer; libraries remember their sort and
   filter pills
 - Floating mini player and navigation bar, neutral theme with a choice of
@@ -38,7 +40,7 @@ digital library server. Kotlin and Jetpack Compose.
 
 In rough order: SSO sign-in, the EPUB reader, downloads and
 offline playback, dashboard rows from the server's layout, series, authors
-and shelves, search, bookmarks, in-app updates and the stats screen. Each has an issue in the tracker.
+and shelves, search, bookmarks and in-app updates. Each has an issue in the tracker.
 
 ## Building
 

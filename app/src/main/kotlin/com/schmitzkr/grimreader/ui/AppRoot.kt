@@ -47,6 +47,7 @@ import com.schmitzkr.grimreader.ui.onboarding.ServerUrlScreen
 import com.schmitzkr.grimreader.ui.player.MiniPlayer
 import com.schmitzkr.grimreader.ui.player.PlayerScreen
 import com.schmitzkr.grimreader.ui.settings.SettingsScreen
+import com.schmitzkr.grimreader.ui.stats.StatsScreen
 import com.schmitzkr.grimreader.ui.browse.AuthorTitledList
 import com.schmitzkr.grimreader.ui.browse.BookListViewModel
 import com.schmitzkr.grimreader.ui.browse.BrowseScreen
@@ -80,6 +81,7 @@ object Routes {
     fun shelf(id: Long) = "shelf/$id"
     fun magicShelf(id: Long) = "magic/$id"
 
+    const val STATS = "stats"
     const val READER = "reader/{format}/{id}"
     fun reader(format: PageFormat, id: Long) = "reader/${format.name.lowercase()}/$id"
 }
@@ -181,7 +183,8 @@ private fun MainShell(vm: RootViewModel) {
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
-            composable(Routes.SETTINGS) { SettingsScreen() }
+            composable(Routes.SETTINGS) { SettingsScreen(onOpenStats = { nav.navigate(Routes.STATS) }) }
+            composable(Routes.STATS) { StatsScreen(onBack = { nav.popBackStack() }) }
             composable(
                 Routes.LIBRARY,
                 arguments = listOf(navArgument("id") { type = NavType.LongType }),

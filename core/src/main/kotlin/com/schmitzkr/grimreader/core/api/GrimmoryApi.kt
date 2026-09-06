@@ -14,6 +14,10 @@ import com.schmitzkr.grimreader.core.model.PublicSettings
 import com.schmitzkr.grimreader.core.model.Series
 import com.schmitzkr.grimreader.core.model.Shelf
 import kotlinx.serialization.Serializable
+import com.schmitzkr.grimreader.core.stats.ListeningCompletion
+import com.schmitzkr.grimreader.core.stats.ListeningDay
+import com.schmitzkr.grimreader.core.stats.ReadingStreak
+import com.schmitzkr.grimreader.core.stats.WeekTimelineEntry
 import kotlinx.serialization.json.JsonObject
 import okhttp3.ResponseBody
 import retrofit2.Response
@@ -179,16 +183,16 @@ interface GrimmoryApi {
     suspend fun createReadingSession(@Body body: JsonObject): Response<Unit>
 
     @GET("user-stats/reading/streak")
-    suspend fun readingStreak(): JsonObject
+    suspend fun readingStreak(): ReadingStreak
 
     @GET("user-stats/reading/timeline")
-    suspend fun weekTimeline(@Query("year") year: Int, @Query("week") week: Int): List<JsonObject>
+    suspend fun weekTimeline(@Query("year") year: Int, @Query("week") week: Int): List<WeekTimelineEntry>
 
     @GET("user-stats/listening/completion")
-    suspend fun listeningCompletion(): JsonObject
+    suspend fun listeningCompletion(): ListeningCompletion
 
     @GET("user-stats/listening/heatmap/monthly")
-    suspend fun listeningDays(@Query("year") year: Int, @Query("month") month: Int): List<JsonObject>
+    suspend fun listeningDays(@Query("year") year: Int, @Query("month") month: Int): List<ListeningDay>
 
     // ── Files ─────────────────────────────────────────────────────────────
 

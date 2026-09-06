@@ -73,6 +73,7 @@ interface GrimmoryApi {
         @Query("authors") authors: List<String>? = null,
         @Query("fileType") fileType: String? = null,
         @Query("status") status: String? = null,
+        @Query("shelfId") shelfId: Long? = null,
     ): PageResponse<Book>
 
     @GET("app/books/search")

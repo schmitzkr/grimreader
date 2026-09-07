@@ -91,7 +91,7 @@ fun MiniPlayer(
                 )
                 val remaining = (state.durationMs - state.positionMs).coerceAtLeast(0)
                 Text(
-                    state.sleepRemainingMs?.let { "Sleep in ${formatShort(it)}" }
+                    state.sleepRemainingMs?.let { if (state.sleepAtChapterEnd) "Sleep at chapter end" else "Sleep in ${formatShort(it)}" }
                         ?: if (state.durationMs > 0) "${formatShort(remaining)} left" else state.artist,
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,

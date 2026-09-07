@@ -175,7 +175,7 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
             BottomAction(Icons.Outlined.Speed, formatSpeed(state.speed)) { sheet = "speed" }
             BottomAction(
                 Icons.Outlined.Bedtime,
-                state.sleepRemainingMs?.let { formatShort(it) } ?: "Sleep",
+                state.sleepRemainingMs?.let { if (state.sleepAtChapterEnd) "Chapter end" else formatShort(it) } ?: "Sleep",
             ) { sheet = "sleep" }
             BottomAction(Icons.Outlined.FormatListBulleted, "Chapters", enabled = state.chapters.isNotEmpty()) { sheet = "chapters" }
             BottomAction(Icons.Outlined.BookmarkBorder, "Bookmarks") { sheet = "bookmarks" }
@@ -207,6 +207,16 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
         "sleep" -> ModalBottomSheet(onDismissRequest = { sheet = null }) {
             Column(Modifier.padding(bottom = 24.dp)) {
                 Text("Sleep timer", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(24.dp, 8.dp))
+                ListItem(
+                    headlineContent = { Text("End of chapter") },
+                    supportingContent = {
+                        Text(
+                            state.currentChapterIndex?.let { "Stops where \"${state.chapters[it].title}\" ends" }
+                                ?: if (state.trackCount > 1) "Stops at the end of this track" else "Stops at the end of the book",
+                        )
+                    },
+                    modifier = Modifier.clickableRow { if (player.startSleepAtChapterEnd()) sheet = null },
+                )
                 sleepPresets.forEach { minutes ->
                     ListItem(
                         headlineContent = { Text("$minutes minutes") },

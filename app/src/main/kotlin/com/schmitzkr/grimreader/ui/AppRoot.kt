@@ -21,6 +21,10 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -260,13 +264,28 @@ private fun MainShell(vm: RootViewModel) {
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut(),
             ) {
-                MiniPlayer(
-                    state = playback,
-                    onTap = { nav.navigate(Routes.PLAYER) },
-                    onTogglePlay = vm.player::togglePlayPause,
-                    onForward = vm.player::fastForward,
-                    modifier = Modifier.widthIn(max = 560.dp).padding(horizontal = 12.dp, vertical = 6.dp),
+                // Swiping the pill away, either direction, stops playback (the
+                // position is saved first) and clears it from the screen.
+                val dismiss = rememberSwipeToDismissBoxState(
+                    confirmValueChange = { value ->
+                        if (value != SwipeToDismissBoxValue.Settled) vm.player.stop()
+                        value != SwipeToDismissBoxValue.Settled
+                    },
                 )
+                LaunchedEffect(playback.bookId) { dismiss.snapTo(SwipeToDismissBoxValue.Settled) }
+                SwipeToDismissBox(
+                    state = dismiss,
+                    backgroundContent = {},
+                    modifier = Modifier.widthIn(max = 560.dp),
+                ) {
+                    MiniPlayer(
+                        state = playback,
+                        onTap = { nav.navigate(Routes.PLAYER) },
+                        onTogglePlay = vm.player::togglePlayPause,
+                        onForward = vm.player::fastForward,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
             }
             AnimatedVisibility(visible = onTab, enter = fadeIn(), exit = fadeOut()) {
                 FloatingNavBar(

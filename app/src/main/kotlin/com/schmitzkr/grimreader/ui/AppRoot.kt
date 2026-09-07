@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryBooks
@@ -264,7 +265,7 @@ private fun MainShell(vm: RootViewModel) {
                     onTap = { nav.navigate(Routes.PLAYER) },
                     onTogglePlay = vm.player::togglePlayPause,
                     onForward = vm.player::fastForward,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.widthIn(max = 560.dp).padding(horizontal = 12.dp, vertical = 6.dp),
                 )
             }
             AnimatedVisibility(visible = onTab, enter = fadeIn(), exit = fadeOut()) {

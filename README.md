@@ -53,6 +53,9 @@ digital library server. Kotlin and Jetpack Compose.
 - Floating mini player and navigation bar, the same floating chrome inside
   the readers, neutral theme with a choice of accent, pure-black option for
   OLED screens
+- Tablets and landscape: libraries as two panes, wider Home tiles, Settings
+  and stats at a readable width, two-column EPUB pages once the screen is
+  wide enough
 
 ## Coming next
 

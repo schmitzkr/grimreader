@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,7 +69,6 @@ import retrofit2.HttpException
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.TextStyle
-import java.util.Locale
 import javax.inject.Inject
 
 data class StatsData(
@@ -264,6 +264,7 @@ private fun WeekBars(days: List<Pair<LocalDate, Long>>) {
     val max = (days.maxOfOrNull { it.second } ?: 0L).coerceAtLeast(1L)
     val bar = MaterialTheme.colorScheme.primary
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
+    val locale = LocalLocale.current.platformLocale
     Column {
         Canvas(Modifier.fillMaxWidth().height(96.dp)) {
             val slot = size.width / days.size
@@ -279,7 +280,7 @@ private fun WeekBars(days: List<Pair<LocalDate, Long>>) {
         Row(Modifier.fillMaxWidth()) {
             days.forEach { (date, minutes) ->
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()), style = MaterialTheme.typography.labelSmall)
+                    Text(date.dayOfWeek.getDisplayName(TextStyle.NARROW, locale), style = MaterialTheme.typography.labelSmall)
                     Text(if (minutes > 0) "${minutes}m" else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

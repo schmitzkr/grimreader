@@ -15,7 +15,7 @@ val hasReleaseSigning = keystorePath != null && file(keystorePath).exists()
 
 android {
     namespace = "com.schmitzkr.grimreader"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "is.schmitzkr.grimreader"

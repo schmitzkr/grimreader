@@ -126,6 +126,9 @@ class BooksRepository @Inject constructor(
 
     suspend fun recentlyAdded(limit: Int = 20): List<Book> = api.recentlyAdded(limit)
 
+    /** Books marked read; the order is applied client-side from lastReadTime. */
+    suspend fun finishedBooks(size: Int = 100): List<Book> = api.books(status = "READ", page = 0, size = size).content
+
     suspend fun randomBooks(size: Int = 20, libraryId: Long? = null): List<Book> = api.randomBooks(size, libraryId)
 
     suspend fun dashboardConfig(): DashboardConfig? =

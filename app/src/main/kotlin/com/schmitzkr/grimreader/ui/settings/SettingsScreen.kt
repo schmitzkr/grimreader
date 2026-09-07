@@ -179,7 +179,7 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                 Item(
                     "Downloads",
                     if (done.isEmpty()) "Nothing on this device yet"
-                    else "${done.size} audiobook${if (done.size == 1) "" else "s"} · ${formatBytes(done.sumOf { it.bytes })}",
+                    else "${done.size} book${if (done.size == 1) "" else "s"} · ${formatBytes(done.sumOf { it.bytes })}",
                     onOpenDownloads,
                 )
             }

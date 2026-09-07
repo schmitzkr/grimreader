@@ -33,8 +33,9 @@ digital library server. Kotlin and Jetpack Compose.
 - Comic (CBX) and PDF readers: pinch to zoom, double-tap, page slider,
   right-to-left reading for manga, night mode for PDFs, progress saved to
   the server so the web reader opens on the same page
-- Download an audiobook for offline listening: it plays from the device
-  with no network, a Downloaded pill filters each library, and Settings →
+- Download any book for offline use: audiobooks play, EPUB, FB2 and PDF
+  open in their readers and comics keep every page, all from the device
+  with no network; a Downloaded pill filters each library, and Settings →
   Downloads lists what is on the device with sizes and removal
 - Positions saved on the device first and pushed to the server, so a lost
   connection never loses your place; pending saves retry on their own

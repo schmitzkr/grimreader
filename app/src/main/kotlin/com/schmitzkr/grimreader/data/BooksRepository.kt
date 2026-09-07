@@ -206,6 +206,8 @@ class BooksRepository @Inject constructor(
 
     fun comicPageUrl(bookId: Long, page: Int): String = client().comicPageUrl(bookId, page)
 
+    fun downloadUrl(book: Book, fileId: Long?): String = client().downloadUrl(book.id, book.downloadFileId(fileId))
+
     /**
      * Streams a book file to [target] (through a temp file, so a half
      * download never looks complete). [fileId] null means the primary file.

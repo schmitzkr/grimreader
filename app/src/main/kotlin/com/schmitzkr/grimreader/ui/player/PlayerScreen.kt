@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.FormatListBulleted
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.rounded.Forward30
@@ -177,6 +178,7 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
                 state.sleepRemainingMs?.let { formatShort(it) } ?: "Sleep",
             ) { sheet = "sleep" }
             BottomAction(Icons.Outlined.FormatListBulleted, "Chapters", enabled = state.chapters.isNotEmpty()) { sheet = "chapters" }
+            BottomAction(Icons.Outlined.BookmarkBorder, "Bookmarks") { sheet = "bookmarks" }
         }
     }
 
@@ -217,6 +219,9 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
                     }
                 }
             }
+        }
+        "bookmarks" -> ModalBottomSheet(onDismissRequest = { sheet = null }) {
+            BookmarksSheetContent(state = state, onSeek = { player.seekToAbsolute(it); sheet = null })
         }
         "chapters" -> ModalBottomSheet(onDismissRequest = { sheet = null }) {
             val current = state.currentChapterIndex

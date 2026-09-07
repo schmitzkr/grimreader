@@ -36,8 +36,17 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import com.schmitzkr.grimreader.core.model.Book
+import com.schmitzkr.grimreader.core.model.PageFormat
 import com.schmitzkr.grimreader.data.BooksRepository
+import com.schmitzkr.grimreader.data.DownloadManager
+import com.schmitzkr.grimreader.data.DownloadStatus
+import com.schmitzkr.grimreader.ui.formatBytes
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import com.schmitzkr.grimreader.playback.PlayerController
 import com.schmitzkr.grimreader.ui.components.BookCover
 import com.schmitzkr.grimreader.ui.components.ErrorState
@@ -59,6 +68,7 @@ sealed interface BookUiState {
 class BookDetailViewModel @Inject constructor(
     private val books: BooksRepository,
     val player: PlayerController,
+    val downloads: DownloadManager,
     savedState: SavedStateHandle,
 ) : ViewModel() {
     private val bookId: Long = savedState.get<Long>("id") ?: -1L
@@ -76,6 +86,8 @@ class BookDetailViewModel @Inject constructor(
         viewModelScope.launch {
             if (!quiet) state.value = BookUiState.Loading
             runCatching { books.book(bookId) }
+                // Offline, a downloaded book still opens from its record.
+                .recoverCatching { e -> downloads.record(bookId)?.book ?: throw e }
                 .onSuccess { state.value = BookUiState.Ready(it) }
                 .onFailure { if (!quiet) state.value = BookUiState.Error(friendlyError(it)) }
         }
@@ -95,10 +107,13 @@ fun BookDetailScreen(
     bookId: Long,
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
+    onOpenReader: (PageFormat) -> Unit,
+    onOpenEpub: () -> Unit,
     vm: BookDetailViewModel = hiltViewModel(key = "book-$bookId"),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val playback by vm.player.state.collectAsStateWithLifecycle()
+    val downloadStates by vm.downloads.state.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.padding(4.dp)) {
@@ -123,6 +138,7 @@ fun BookDetailScreen(
                         cornerRadius = 16,
                         showProgress = false,
                         fallbackUrl = vm.fallbackCoverUrl(book),
+                        downloaded = downloadStates[book.id]?.isDone == true,
                     )
                     Spacer(Modifier.height(20.dp))
                     Text(book.title, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
@@ -184,9 +200,47 @@ fun BookDetailScreen(
                             Spacer(Modifier.width(8.dp))
                             Text(if (isCurrent) "Now playing" else if ((progress ?: 0.0) > 0) "Continue" else "Listen")
                         }
+                        Spacer(Modifier.height(10.dp))
+                        val dl = downloadStates[book.id]
+                        when {
+                            dl == null || dl.status == DownloadStatus.FAILED -> OutlinedButton(
+                                onClick = { if (dl != null) vm.downloads.remove(book.id); vm.downloads.download(book.id) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Rounded.Download, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (dl == null) "Download for offline" else "Download failed · Retry")
+                            }
+                            dl.isActive -> OutlinedButton(onClick = { vm.downloads.cancel(book.id) }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Rounded.Close, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (dl.status == DownloadStatus.QUEUED) "Waiting… · Cancel" else "Downloading ${(dl.fraction * 100).toInt()}% · Cancel")
+                            }
+                            else -> OutlinedButton(onClick = { vm.downloads.remove(book.id) }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Rounded.DownloadDone, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("On this device · ${formatBytes(dl.bytes)} · Remove")
+                            }
+                        }
                     } else {
-                        OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                            Text("Reader coming soon (${book.primaryFileType ?: "ebook"})")
+                        val pageFormat = PageFormat.entries.firstOrNull { book.primaryFileType == it.bookType || book.fileIdFor(it) != null }
+                        val hasEpub = book.primaryFileType == "EPUB" || book.files.any { it.bookType == "EPUB" }
+                        if (hasEpub) {
+                            Button(onClick = onOpenEpub, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                                Icon(Icons.AutoMirrored.Rounded.MenuBook, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if ((progress ?: 0.0) > 0) "Continue reading" else "Read")
+                            }
+                        } else if (pageFormat != null) {
+                            Button(onClick = { onOpenReader(pageFormat) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                                Icon(Icons.AutoMirrored.Rounded.MenuBook, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if ((progress ?: 0.0) > 0) "Continue reading" else "Read")
+                            }
+                        } else {
+                            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                                Text("No reader for ${book.primaryFileType ?: "this format"} yet")
+                            }
                         }
                     }
                     Spacer(Modifier.height(10.dp))

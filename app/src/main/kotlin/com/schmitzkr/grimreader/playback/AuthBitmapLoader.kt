@@ -33,6 +33,9 @@ class AuthBitmapLoader(
     }
 
     override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> = scope.future {
+        if (uri.scheme == "file") {
+            return@future BitmapFactory.decodeFile(uri.path) ?: throw IOException("Could not decode cover")
+        }
         callFactory.newCall(Request.Builder().url(uri.toString()).build()).execute().use { response ->
             if (!response.isSuccessful) throw IOException("Cover ${response.code}")
             val bytes = response.body?.bytes() ?: throw IOException("Empty cover")

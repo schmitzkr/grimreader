@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -39,6 +40,7 @@ class Settings @Inject constructor(private val context: Context) {
     val accent: Flow<String> = store.data.map { it[ACCENT] ?: "violet" }
     val oledBlack: Flow<Boolean> = store.data.map { it[OLED_BLACK] ?: false }
     val autoRewind: Flow<Boolean> = store.data.map { it[AUTO_REWIND] ?: true }
+    val shakeToReset: Flow<Boolean> = store.data.map { it[SHAKE_TO_RESET] ?: true }
 
     suspend fun serverUrlNow(): String? = store.data.first()[SERVER_URL]
 
@@ -50,6 +52,53 @@ class Settings @Inject constructor(private val context: Context) {
     suspend fun setAccent(name: String) = store.edit { it[ACCENT] = name }
     suspend fun setOledBlack(on: Boolean) = store.edit { it[OLED_BLACK] = on }
     suspend fun setAutoRewind(on: Boolean) = store.edit { it[AUTO_REWIND] = on }
+    suspend fun setShakeToReset(on: Boolean) = store.edit { it[SHAKE_TO_RESET] = on }
+
+    // ── Library filters, remembered per library ───────────────────────────
+
+    suspend fun libraryFilters(libraryId: Long): List<String>? =
+        store.data.first()[stringPreferencesKey("library_filters_$libraryId")]?.split('|')
+
+    suspend fun rememberLibraryFilters(libraryId: Long, sort: String, type: String, status: String) =
+        store.edit { it[stringPreferencesKey("library_filters_$libraryId")] = "$sort|$type|$status" }
+
+    // ── Reading sessions waiting to be posted ─────────────────────────────
+
+    suspend fun pendingSessions(): String? = store.data.first()[PENDING_SESSIONS]
+    suspend fun setPendingSessions(raw: String?) = store.edit { p ->
+        if (raw == null) p.remove(PENDING_SESSIONS) else p[PENDING_SESSIONS] = raw
+    }
+
+    suspend fun lastUpdateCheck(): Instant? = store.data.first()[LAST_UPDATE_CHECK]?.let { Instant.ofEpochMilli(it) }
+    suspend fun setLastUpdateCheck(at: Instant) = store.edit { it[LAST_UPDATE_CHECK] = at.toEpochMilli() }
+
+    val recentSearches: Flow<List<String>> = store.data.map { p ->
+        p[RECENT_SEARCHES]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
+    }
+
+    suspend fun rememberSearch(query: String) = store.edit { p ->
+        val current = p[RECENT_SEARCHES]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
+        p[RECENT_SEARCHES] = (listOf(query.trim()) + current.filter { !it.equals(query.trim(), ignoreCase = true) })
+            .take(10).joinToString("\n")
+    }
+
+    suspend fun clearSearches() = store.edit { it.remove(RECENT_SEARCHES) }
+
+    // ── Readers ───────────────────────────────────────────────────────────
+
+    /** Manga reads right to left; the server's comic settings carry no direction, so this is per device. */
+    suspend fun comicRtl(bookId: Long): Boolean = store.data.first()[booleanPreferencesKey("comic_rtl_$bookId")] ?: false
+    suspend fun setComicRtl(bookId: Long, rtl: Boolean) = store.edit { it[booleanPreferencesKey("comic_rtl_$bookId")] = rtl }
+
+    /** The EPUB reader's page theme (`light`, `sepia`, `dark`); null follows the app theme. */
+    suspend fun epubTheme(): String? = store.data.first()[EPUB_THEME]
+    suspend fun setEpubTheme(name: String) = store.edit { it[EPUB_THEME] = name }
+    suspend fun epubFontPct(): Int = store.data.first()[EPUB_FONT_PCT] ?: 100
+    suspend fun setEpubFontPct(pct: Int) = store.edit { it[EPUB_FONT_PCT] = pct }
+
+    /** One night-mode preference shared by the readers. */
+    suspend fun readerNight(): Boolean = store.data.first()[READER_NIGHT] ?: false
+    suspend fun setReaderNight(on: Boolean) = store.edit { it[READER_NIGHT] = on }
 
     suspend fun speedFor(bookId: Long): Float = store.data.first().let { p ->
         (p[doublePreferencesKey("speed_$bookId")] ?: p[DEFAULT_SPEED] ?: 1.0).toFloat()
@@ -58,6 +107,22 @@ class Settings @Inject constructor(private val context: Context) {
     suspend fun rememberSpeed(bookId: Long, speed: Float) = store.edit { p ->
         p[doublePreferencesKey("speed_$bookId")] = speed.toDouble()
         p[DEFAULT_SPEED] = speed.toDouble()
+    }
+
+    // ── OIDC in flight ────────────────────────────────────────────────────
+    // Keyed by the server-issued state so a redirect that arrives in a fresh
+    // process still finds its PKCE verifier and nonce. Cleared on use.
+
+    suspend fun storeOidcPending(state: String, verifier: String, nonce: String) = store.edit { p ->
+        p[stringPreferencesKey("oidc_pending_$state")] = "$verifier\n$nonce"
+    }
+
+    suspend fun takeOidcPending(state: String): Pair<String, String>? {
+        val key = stringPreferencesKey("oidc_pending_$state")
+        val raw = store.data.first()[key] ?: return null
+        store.edit { it.remove(key) }
+        val parts = raw.split('\n')
+        return if (parts.size == 2) parts[0] to parts[1] else null
     }
 
     // ── Session ───────────────────────────────────────────────────────────
@@ -89,6 +154,13 @@ class Settings @Inject constructor(private val context: Context) {
         val ACCESS_TOKEN = stringPreferencesKey("access_token")
         val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
         val EXPIRES_AT = longPreferencesKey("expires_at")
+        val LAST_UPDATE_CHECK = longPreferencesKey("last_update_check")
+        val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
+        val READER_NIGHT = booleanPreferencesKey("reader_night")
+        val EPUB_THEME = stringPreferencesKey("epub_theme")
+        val EPUB_FONT_PCT = intPreferencesKey("epub_font_pct")
+        val SHAKE_TO_RESET = booleanPreferencesKey("shake_to_reset")
+        val PENDING_SESSIONS = stringPreferencesKey("pending_sessions")
     }
 }
 

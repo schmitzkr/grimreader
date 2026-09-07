@@ -14,6 +14,10 @@ import com.schmitzkr.grimreader.core.model.PublicSettings
 import com.schmitzkr.grimreader.core.model.Series
 import com.schmitzkr.grimreader.core.model.Shelf
 import kotlinx.serialization.Serializable
+import com.schmitzkr.grimreader.core.stats.ListeningCompletion
+import com.schmitzkr.grimreader.core.stats.ListeningDay
+import com.schmitzkr.grimreader.core.stats.ReadingStreak
+import com.schmitzkr.grimreader.core.stats.WeekTimelineEntry
 import kotlinx.serialization.json.JsonObject
 import okhttp3.ResponseBody
 import retrofit2.Response
@@ -73,6 +77,7 @@ interface GrimmoryApi {
         @Query("authors") authors: List<String>? = null,
         @Query("fileType") fileType: String? = null,
         @Query("status") status: String? = null,
+        @Query("shelfId") shelfId: Long? = null,
     ): PageResponse<Book>
 
     @GET("app/books/search")
@@ -178,16 +183,16 @@ interface GrimmoryApi {
     suspend fun createReadingSession(@Body body: JsonObject): Response<Unit>
 
     @GET("user-stats/reading/streak")
-    suspend fun readingStreak(): JsonObject
+    suspend fun readingStreak(): ReadingStreak
 
     @GET("user-stats/reading/timeline")
-    suspend fun weekTimeline(@Query("year") year: Int, @Query("week") week: Int): List<JsonObject>
+    suspend fun weekTimeline(@Query("year") year: Int, @Query("week") week: Int): List<WeekTimelineEntry>
 
     @GET("user-stats/listening/completion")
-    suspend fun listeningCompletion(): JsonObject
+    suspend fun listeningCompletion(): ListeningCompletion
 
     @GET("user-stats/listening/heatmap/monthly")
-    suspend fun listeningDays(@Query("year") year: Int, @Query("month") month: Int): List<JsonObject>
+    suspend fun listeningDays(@Query("year") year: Int, @Query("month") month: Int): List<ListeningDay>
 
     // ── Files ─────────────────────────────────────────────────────────────
 
@@ -209,12 +214,14 @@ data class LoginRequest(val username: String, val password: String)
 @Serializable
 data class RefreshRequest(val refreshToken: String)
 
+/** What `POST /auth/oidc/callback` takes; the server redeems the code itself. */
 @Serializable
 data class OidcCallbackRequest(
     val code: String,
     val state: String,
     val redirectUri: String,
-    val codeVerifier: String? = null,
+    val codeVerifier: String,
+    val nonce: String,
 )
 
 @Serializable

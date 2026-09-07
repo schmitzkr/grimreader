@@ -71,9 +71,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
@@ -407,6 +410,15 @@ fun EpubReaderScreen(
     var sheet by remember { mutableStateOf<String?>(null) }
     var pageLoaded by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
+    // Measured from Compose's own layout, not read from the page's
+    // window.innerWidth/innerHeight: on-device testing found the WebView
+    // reporting a real width but an exact zero height on first layout, and
+    // the DOM 'resize' event never firing even on a genuine on-screen size
+    // change (rotation) -- so the page's self-reported size can't be trusted
+    // for either the initial open or a later resize.
+    var webViewSizePx by remember { mutableStateOf<IntSize?>(null) }
+    var opened by remember { mutableStateOf(false) }
+    val density = LocalDensity.current.density
     val view = LocalView.current
     val context = LocalContext.current
     val exit = { vm.exit(onBack) }
@@ -426,15 +438,36 @@ fun EpubReaderScreen(
         }
     }
 
-    // Open the book once both the page and the file are ready.
-    LaunchedEffect(pageLoaded, state.fileUrl) {
+    // Open the book once the page has loaded, the file is ready, and Compose
+    // has reported a real (nonzero) size for the WebView -- opened is a
+    // one-shot latch so a later size change (rotation) resizes the already-
+    // open rendition below instead of re-running open() from scratch.
+    LaunchedEffect(pageLoaded, state.fileUrl, webViewSizePx) {
+        if (opened) return@LaunchedEffect
         val url = state.fileUrl ?: return@LaunchedEffect
         if (!pageLoaded) return@LaunchedEffect
+        val size = webViewSizePx?.takeIf { it.width > 0 && it.height > 0 } ?: return@LaunchedEffect
+        opened = true
         val cfi = state.initialCfi?.let { JSONObject.quote(it) } ?: "null"
+        val widthCss = (size.width / density).toInt()
+        val heightCss = (size.height / density).toInt()
         webView?.evaluateJavascript(
-            guardedEval("reader.open(${JSONObject.quote(url)}, $cfi, ${JSONObject.quote(state.theme)}, ${state.fontPct}, ${JSONObject.quote(state.font)}, ${state.linePct})"),
+            guardedEval(
+                "reader.open(${JSONObject.quote(url)}, $cfi, ${JSONObject.quote(state.theme)}, " +
+                    "${state.fontPct}, ${JSONObject.quote(state.font)}, ${state.linePct}, $widthCss, $heightCss)",
+            ),
             null,
         )
+    }
+    // A later size change (rotation, split-screen, a fold/unfold): resize the
+    // already-open rendition directly rather than relying on the page's own
+    // (confirmed unreliable in this WebView) resize handling.
+    LaunchedEffect(webViewSizePx) {
+        if (!opened) return@LaunchedEffect
+        val size = webViewSizePx?.takeIf { it.width > 0 && it.height > 0 } ?: return@LaunchedEffect
+        val widthCss = (size.width / density).toInt()
+        val heightCss = (size.height / density).toInt()
+        webView?.evaluateJavascript(guardedEval("reader.resize($widthCss, $heightCss)"), null)
     }
     LaunchedEffect(webView) {
         val w = webView ?: return@LaunchedEffect
@@ -447,7 +480,7 @@ fun EpubReaderScreen(
             state.loading -> LoadingState()
             state.error != null -> ErrorState(state.error!!, onRetry = { vm.retry() })
             else -> AndroidView(
-                modifier = Modifier.fillMaxSize().systemBarsPadding(),
+                modifier = Modifier.fillMaxSize().systemBarsPadding().onSizeChanged { webViewSizePx = it },
                 factory = { ctx ->
                     val loader = WebViewAssetLoader.Builder()
                         .setDomain("appassets.androidplatform.net")

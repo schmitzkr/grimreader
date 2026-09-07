@@ -126,7 +126,18 @@
   function spreadFor(widthPx) { return widthPx >= 840 ? 'auto' : 'none'; }
 
   window.reader = {
-    open: function (url, cfi, theme, fontPct, font, linePct) {
+    /*
+     * width/height (CSS px) are passed in explicitly by Kotlin, measured from
+     * Compose's own layout rather than read from window.innerWidth/innerHeight
+     * here: on-device testing found #viewer/the rendered iframe getting a
+     * real width but an exact zero height on first layout in this WebView,
+     * and confirmed the DOM 'resize' event never fires in it even when the
+     * hosting Android View's on-screen size genuinely changes (rotation) --
+     * so neither percentage/vh-based CSS sizing nor a JS resize listener can
+     * be trusted here. '100%' is kept as a fallback only for a caller that
+     * doesn't have a measured size yet.
+     */
+    open: function (url, cfi, theme, fontPct, font, linePct, width, height) {
       /* Everything up to the two promise chains below runs synchronously; an
        * exception anywhere in here used to abort open() with nothing ever
        * reported to Android (onReady/onError are both wired up inside this
@@ -134,13 +145,13 @@
       try {
         book = ePub(url);
         rendition = book.renderTo('viewer', {
-          width: '100%', height: '100%', flow: 'paginated', spread: spreadFor(window.innerWidth), allowScriptedContent: false
+          width: width || '100%', height: height || '100%', flow: 'paginated',
+          spread: spreadFor(width || window.innerWidth), allowScriptedContent: false
         });
-        /* epub.js paginates against the container's size at renderTo() time and
-         * never re-measures on its own -- a WebView hosted in Compose doesn't
-         * always have its final on-screen size settled the instant this runs,
-         * so an explicit rendition.resize() (not just re-picking spread mode)
-         * is needed whenever the viewport actually changes size. */
+        /* Defensive fallback only -- confirmed dead in the WebView this was
+         * tested in (no log line ever appears here even on a real device
+         * rotation that genuinely changed the on-screen size). resize() is
+         * called explicitly from Kotlin instead; see window.reader.resize(). */
         window.addEventListener('resize', function () {
           if (!rendition) return;
           rendition.resize();
@@ -165,17 +176,21 @@
         }).catch(fail);
         var first = cfi ? rendition.display(cfi).catch(function () { return rendition.display(); }) : rendition.display();
         first.then(function () {
-          /* Belt-and-braces: force one resize right after the first display
-           * succeeds, in case the container's size at renderTo() time was
-           * stale/zero and no further resize event ever fires to correct
-           * it -- content can otherwise "load" (relocated still reports a
-           * real chapter/CFI) while rendering into an invisible area. */
-          if (rendition) rendition.resize();
           logViewerState('after-display');
         }).catch(fail);
       } catch (e) {
         fail(e);
       }
+    },
+    /* Called from Kotlin whenever Compose reports a new measured size for
+     * the WebView (e.g. a rotation) -- the primary resize mechanism now,
+     * since the DOM 'resize' event doesn't fire in this host. width/height
+     * are CSS px, same units open() takes. */
+    resize: function (width, height) {
+      if (!rendition) return;
+      rendition.resize(width, height);
+      rendition.spread(spreadFor(width));
+      logViewerState('after-explicit-resize');
     },
     next: function () { if (rendition) rendition.next(); },
     prev: function () { if (rendition) rendition.prev(); },

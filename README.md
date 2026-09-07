@@ -36,7 +36,9 @@ digital library server. Kotlin and Jetpack Compose.
 - Download any book for offline use: audiobooks play, EPUB, FB2 and PDF
   open in their readers and comics keep every page, all from the device
   with no network; a Downloaded pill filters each library, and Settings →
-  Downloads lists what is on the device with sizes and removal
+  Downloads lists what is on the device with sizes and removal; downloads
+  run in a foreground service with a progress notification and resume
+  from the files already complete
 - Positions saved on the device first and pushed to the server, so a lost
   connection never loses your place; pending saves retry on their own
 - Reading and listening sessions recorded for the server's stats pages,

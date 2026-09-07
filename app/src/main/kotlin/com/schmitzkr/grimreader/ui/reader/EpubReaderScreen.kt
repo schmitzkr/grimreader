@@ -119,6 +119,10 @@ data class EpubUiState(
     val toc: List<TocEntry> = emptyList(),
     val theme: String = "light",
     val fontPct: Int = 100,
+    /** `book`, `serif` or `sans`. */
+    val font: String = "book",
+    /** Line height as a percentage of the font size; 100 is the book's own. */
+    val linePct: Int = 100,
     val bookmarks: List<Bookmark> = emptyList(),
     val exiting: Boolean = false,
     val syncError: String? = null,
@@ -193,6 +197,8 @@ class EpubReaderViewModel @Inject constructor(
             val progress = runCatching { books.epubProgress(bookId) }.getOrNull()
             val theme = settings.epubTheme() ?: defaultTheme
             val font = settings.epubFontPct()
+            val family = settings.epubFont()
+            val line = settings.epubLinePct()
             saver = DebouncedSaver(
                 scope = viewModelScope,
                 persist = { books.saveEpubProgress(bookId, it, bookFileId) },
@@ -203,7 +209,7 @@ class EpubReaderViewModel @Inject constructor(
                     loading = false, title = book.title,
                     fileUrl = fileUrl,
                     initialCfi = progress?.cfi, cfi = progress?.cfi, percentage = progress?.percentage ?: 0.0,
-                    theme = theme, fontPct = font,
+                    theme = theme, fontPct = font, font = family, linePct = line,
                 )
             }
             loadBookmarks()
@@ -241,6 +247,19 @@ class EpubReaderViewModel @Inject constructor(
         state.update { it.copy(theme = name) }
         js("reader.setTheme(${JSONObject.quote(name)})")
         viewModelScope.launch { settings.setEpubTheme(name) }
+    }
+
+    fun setFont(name: String) {
+        state.update { it.copy(font = name) }
+        js("reader.setFont(${JSONObject.quote(name)})")
+        viewModelScope.launch { settings.setEpubFont(name) }
+    }
+
+    fun adjustLine(delta: Int) {
+        val pct = (state.value.linePct + delta).coerceIn(100, 220)
+        state.update { it.copy(linePct = pct) }
+        js("reader.setLineHeight($pct)")
+        viewModelScope.launch { settings.setEpubLinePct(pct) }
     }
 
     fun adjustFont(delta: Int) {
@@ -354,7 +373,10 @@ fun EpubReaderScreen(
         val url = state.fileUrl ?: return@LaunchedEffect
         if (!pageLoaded) return@LaunchedEffect
         val cfi = state.initialCfi?.let { JSONObject.quote(it) } ?: "null"
-        webView?.evaluateJavascript("reader.open(${JSONObject.quote(url)}, $cfi, ${JSONObject.quote(state.theme)}, ${state.fontPct})", null)
+        webView?.evaluateJavascript(
+            "reader.open(${JSONObject.quote(url)}, $cfi, ${JSONObject.quote(state.theme)}, ${state.fontPct}, ${JSONObject.quote(state.font)}, ${state.linePct})",
+            null,
+        )
     }
     LaunchedEffect(webView) {
         val w = webView ?: return@LaunchedEffect
@@ -504,6 +526,26 @@ fun EpubReaderScreen(
                     TextButton(onClick = { vm.adjustFont(-10) }, enabled = state.fontPct > 70) { Text("A−") }
                     Text("${state.fontPct}%", style = MaterialTheme.typography.labelLarge)
                     TextButton(onClick = { vm.adjustFont(10) }, enabled = state.fontPct < 200) { Text("A+") }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Font", style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(6.dp))
+                val fonts = listOf("book" to "Book's own", "serif" to "Serif", "sans" to "Sans")
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    fonts.forEachIndexed { i, (key, label) ->
+                        SegmentedButton(
+                            selected = state.font == key,
+                            onClick = { vm.setFont(key) },
+                            shape = SegmentedButtonDefaults.itemShape(i, fonts.size),
+                        ) { Text(label) }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Line spacing", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.adjustLine(-20) }, enabled = state.linePct > 100) { Text("−") }
+                    Text(if (state.linePct == 100) "Book's own" else "${state.linePct}%", style = MaterialTheme.typography.labelLarge)
+                    TextButton(onClick = { vm.adjustLine(20) }, enabled = state.linePct < 220) { Text("+") }
                 }
             }
         }

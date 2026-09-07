@@ -29,6 +29,7 @@ digital library server. Kotlin and Jetpack Compose.
   device and opens in the EPUB reader; MOBI, AZW3 and supplementary files
   can be handed to another app; a book's files are listed on its page
 - EPUB reader: chapters, bookmarks, light, sepia and dark pages, text size,
+  font choice and line spacing,
   swipe or tap to turn, progress saved as the same CFI and percentage the
   web reader uses so both open at the same place
 - Comic (CBX) and PDF readers: pinch to zoom, double-tap, page slider,

@@ -13,6 +13,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -61,7 +63,19 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    private fun client(): GrimmoryClient = clients.current()
+    /**
+     * [ClientHolder.current] elsewhere is a fair synchronous throw -- every
+     * other caller only ever runs once the app is already interactive. This
+     * one path is different: [completeOidc] can be invoked from
+     * MainActivity.onCreate() the instant the browser hands back a redirect,
+     * which can race [start]'s own async `clients.configure(url)` on a cold
+     * process (the OS killing GrimReader behind the Authentik screen and
+     * relaunching it is routine, not exotic). Awaiting the client's first
+     * configured value instead of throwing closes that window: the SSO
+     * redirect used to fail silently and require a second manual sign-in tap
+     * whenever it lost that race.
+     */
+    private suspend fun client(): GrimmoryClient = clients.client.filterNotNull().first()
 
     suspend fun setServer(url: String): PublicSettings {
         val normalized = url.trim().trimEnd('/').let { if (it.contains("://")) it else "https://$it" }

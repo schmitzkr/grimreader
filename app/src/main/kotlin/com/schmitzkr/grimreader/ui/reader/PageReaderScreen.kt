@@ -300,28 +300,22 @@ fun PageReaderScreen(
         }
 
         AnimatedVisibility(visible = chrome, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
-            Row(
-                Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.55f)).statusBarsPadding().padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White) }
-                Text(state.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            ReaderBar(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp)) {
+                IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                Text(state.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 if (format == PageFormat.CBX) IconButton(onClick = vm::toggleRtl) {
-                    Icon(if (state.rtl) Icons.Rounded.FormatTextdirectionRToL else Icons.Rounded.FormatTextdirectionLToR, "Reading direction", tint = Color.White)
+                    Icon(if (state.rtl) Icons.Rounded.FormatTextdirectionRToL else Icons.Rounded.FormatTextdirectionLToR, "Reading direction")
                 }
                 if (format == PageFormat.PDF) IconButton(onClick = vm::toggleNight) {
-                    Icon(if (state.night) Icons.Outlined.LightMode else Icons.Outlined.DarkMode, "Night mode", tint = Color.White)
+                    Icon(if (state.night) Icons.Outlined.LightMode else Icons.Outlined.DarkMode, "Night mode")
                 }
             }
         }
         val source = state.source
         AnimatedVisibility(visible = chrome && source != null && source.count > 1, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
             val count = source?.count ?: 1
-            Row(
-                Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.55f)).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("${state.index + 1} / $count", color = Color.White, style = MaterialTheme.typography.labelLarge)
+            ReaderBar(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
+                Text("${state.index + 1} / $count", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 12.dp))
                 Spacer(Modifier.width(12.dp))
                 var drag by remember { mutableStateOf<Float?>(null) }
                 Slider(
@@ -329,7 +323,7 @@ fun PageReaderScreen(
                     onValueChange = { drag = it },
                     onValueChangeFinished = { drag?.let { vm.jump(it.toInt()) }; drag = null },
                     valueRange = 0f..(count - 1).toFloat(),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
                 )
             }
         }

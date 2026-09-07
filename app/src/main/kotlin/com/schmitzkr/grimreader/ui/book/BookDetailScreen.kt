@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
@@ -37,8 +38,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import android.content.Context
+import android.content.Intent
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import com.schmitzkr.grimreader.core.model.Book
+import com.schmitzkr.grimreader.core.model.BookFile
+import com.schmitzkr.grimreader.core.model.FileReader
 import com.schmitzkr.grimreader.core.model.PageFormat
+import com.schmitzkr.grimreader.ui.components.GrimCard
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Box
+import java.io.File
 import com.schmitzkr.grimreader.data.BooksRepository
 import com.schmitzkr.grimreader.data.DownloadManager
 import com.schmitzkr.grimreader.data.DownloadStatus
@@ -69,8 +83,38 @@ class BookDetailViewModel @Inject constructor(
     private val books: BooksRepository,
     val player: PlayerController,
     val downloads: DownloadManager,
+    private val context: Context,
     savedState: SavedStateHandle,
 ) : ViewModel() {
+    /** The file being fetched for another app, while it is. */
+    val opening = MutableStateFlow<Long?>(null)
+    val openError = MutableStateFlow<String?>(null)
+
+    /**
+     * For a format with no reader here (MOBI, AZW3, supplementary files):
+     * fetch the file into the cache and hand it to whatever app can show it.
+     */
+    fun openWith(book: Book, file: BookFile) {
+        if (opening.value != null) return
+        opening.value = file.id
+        viewModelScope.launch {
+            runCatching {
+                val dir = File(context.cacheDir, "share").apply { mkdirs() }
+                val name = (file.fileName ?: "${book.title}.${file.extension ?: "bin"}").replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                val target = File(dir, name)
+                if (!target.exists() || target.length() == 0L) books.downloadToFile(book, file.id, target)
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", target)
+                val view = Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, mimeTypeFor(file.extension ?: target.extension))
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                context.startActivity(Intent.createChooser(view, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }.onFailure { openError.value = friendlyError(it) }
+            opening.value = null
+        }
+    }
+
+    fun clearOpenError() { openError.value = null }
+
     private val bookId: Long = savedState.get<Long>("id") ?: -1L
     val state = MutableStateFlow<BookUiState>(BookUiState.Loading)
 
@@ -108,13 +152,16 @@ fun BookDetailScreen(
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
     onOpenReader: (PageFormat) -> Unit,
-    onOpenEpub: () -> Unit,
+    onOpenEpub: (Long?) -> Unit,
     vm: BookDetailViewModel = hiltViewModel(key = "book-$bookId"),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val playback by vm.player.state.collectAsStateWithLifecycle()
     val downloadStates by vm.downloads.state.collectAsStateWithLifecycle()
+    val opening by vm.opening.collectAsStateWithLifecycle()
+    val openError by vm.openError.collectAsStateWithLifecycle()
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.padding(4.dp)) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
@@ -225,8 +272,9 @@ fun BookDetailScreen(
                     } else {
                         val pageFormat = PageFormat.entries.firstOrNull { book.primaryFileType == it.bookType || book.fileIdFor(it) != null }
                         val hasEpub = book.primaryFileType == "EPUB" || book.files.any { it.bookType == "EPUB" }
-                        if (hasEpub) {
-                            Button(onClick = onOpenEpub, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                        val epubFile = book.files.firstOrNull { it.bookType == "EPUB" } ?: book.files.firstOrNull { it.bookType == "FB2" }
+                        if (hasEpub || epubFile != null) {
+                            Button(onClick = { onOpenEpub(epubFile?.id) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                                 Icon(Icons.AutoMirrored.Rounded.MenuBook, null)
                                 Spacer(Modifier.width(8.dp))
                                 Text(if ((progress ?: 0.0) > 0) "Continue reading" else "Read")
@@ -238,9 +286,23 @@ fun BookDetailScreen(
                                 Text(if ((progress ?: 0.0) > 0) "Continue reading" else "Read")
                             }
                         } else {
-                            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                                Text("No reader for ${book.primaryFileType ?: "this format"} yet")
+                            val primary = book.files.firstOrNull { it.isPrimary } ?: book.files.firstOrNull()
+                            Button(
+                                onClick = { primary?.let { vm.openWith(book, it) } },
+                                enabled = primary != null && opening == null,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                            ) {
+                                Icon(Icons.Rounded.OpenInNew, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (opening != null) "Fetching…" else "Open with another app")
                             }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                noReaderExplainer(book.primaryFileType),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
                         }
                     }
                     Spacer(Modifier.height(10.dp))
@@ -248,6 +310,30 @@ fun BookDetailScreen(
                         Icon(Icons.Rounded.Check, null)
                         Spacer(Modifier.width(8.dp))
                         Text(if (book.isFinished) "Mark unread" else "Mark finished")
+                    }
+                    if (book.files.size > 1) {
+                        Spacer(Modifier.height(8.dp))
+                        SectionLabel("Files", Modifier.fillMaxWidth().padding(0.dp))
+                        GrimCard(Modifier.fillMaxWidth()) {
+                            Column {
+                                book.files.forEachIndexed { i, file ->
+                                    if (i > 0) HorizontalDivider()
+                                    FileRow(
+                                        file = file,
+                                        busy = opening == file.id,
+                                        onOpen = {
+                                            when (file.reader) {
+                                                FileReader.AUDIO -> { vm.play(book.id); onOpenPlayer() }
+                                                FileReader.EPUB -> onOpenEpub(file.id)
+                                                FileReader.PDF -> onOpenReader(PageFormat.PDF)
+                                                FileReader.CBX -> onOpenReader(PageFormat.CBX)
+                                                null -> vm.openWith(book, file)
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
                     book.description?.takeIf { it.isNotBlank() }?.let { description ->
                         Spacer(Modifier.height(8.dp))
@@ -289,6 +375,65 @@ fun BookDetailScreen(
                 }
             }
         }
+    }
+    openError?.let {
+        Snackbar(
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+            action = { TextButton(onClick = vm::clearOpenError) { Text("OK") } },
+        ) { Text(it) }
+    }
+    }
+}
+
+@Composable
+private fun FileRow(file: BookFile, busy: Boolean, onOpen: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(file.displayName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOfNotNull(
+                    file.bookType ?: file.extension?.uppercase(),
+                    if (file.isPrimary) "primary" else null,
+                    if (!file.isBook) "supplementary" else null,
+                    file.fileSizeKb?.let { formatBytes(it * 1024) },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = onOpen, enabled = !busy) {
+            Text(
+                when {
+                    busy -> "Fetching…"
+                    file.reader == FileReader.AUDIO -> "Listen"
+                    file.reader != null -> "Read"
+                    else -> "Open with…"
+                },
+            )
+        }
+    }
+}
+
+private fun noReaderExplainer(type: String?): String = when (type) {
+    "MOBI", "AZW3" -> "GrimReader has no $type reader yet. Open it with another app, or ask your server admin to add an EPUB copy of this book."
+    null -> "This book has no readable file."
+    else -> "GrimReader has no $type reader yet. Open it with another app instead."
+}
+
+private fun mimeTypeFor(extension: String): String {
+    val ext = extension.lowercase().removePrefix(".")
+    return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: when (ext) {
+        "mobi", "prc" -> "application/x-mobipocket-ebook"
+        "azw", "azw3", "kfx" -> "application/vnd.amazon.ebook"
+        "epub" -> "application/epub+zip"
+        "fb2" -> "application/x-fictionbook+xml"
+        "cbz" -> "application/vnd.comicbook+zip"
+        "cbr" -> "application/vnd.comicbook-rar"
+        "cb7" -> "application/x-cb7"
+        else -> "*/*"
     }
 }
 

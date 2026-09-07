@@ -85,8 +85,8 @@ object Routes {
 
     const val STATS = "stats"
     const val DOWNLOADS = "downloads"
-    const val EPUB = "epub/{id}"
-    fun epub(id: Long) = "epub/$id"
+    const val EPUB = "epub/{id}?file={file}"
+    fun epub(id: Long, fileId: Long? = null) = "epub/$id" + (fileId?.let { "?file=$it" } ?: "")
     const val READER = "reader/{format}/{id}"
     fun reader(format: PageFormat, id: Long) = "reader/${format.name.lowercase()}/$id"
 }
@@ -212,12 +212,22 @@ private fun MainShell(vm: RootViewModel) {
                     onBack = { nav.popBackStack() },
                     onOpenPlayer = { nav.navigate(Routes.PLAYER) },
                     onOpenReader = { format -> nav.navigate(Routes.reader(format, entry.arguments!!.getLong("id"))) },
-                    onOpenEpub = { nav.navigate(Routes.epub(entry.arguments!!.getLong("id"))) },
+                    onOpenEpub = { fileId -> nav.navigate(Routes.epub(entry.arguments!!.getLong("id"), fileId)) },
                 )
             }
             composable(Routes.PLAYER) { PlayerScreen(onBack = { nav.popBackStack() }) }
-            composable(Routes.EPUB, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
-                EpubReaderScreen(bookId = entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
+            composable(
+                Routes.EPUB,
+                arguments = listOf(
+                    navArgument("id") { type = NavType.LongType },
+                    navArgument("file") { type = NavType.LongType; defaultValue = -1L },
+                ),
+            ) { entry ->
+                EpubReaderScreen(
+                    bookId = entry.arguments!!.getLong("id"),
+                    fileId = entry.arguments!!.getLong("file").takeIf { it >= 0 },
+                    onBack = { nav.popBackStack() },
+                )
             }
             composable(
                 Routes.READER,

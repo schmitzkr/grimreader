@@ -77,6 +77,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.webkit.WebViewAssetLoader
+import com.schmitzkr.grimreader.core.fb2.Fb2ToEpub
 import com.schmitzkr.grimreader.core.model.Bookmark
 import com.schmitzkr.grimreader.core.model.EpubProgress
 import com.schmitzkr.grimreader.data.BooksRepository
@@ -143,9 +144,13 @@ class EpubReaderViewModel @Inject constructor(
     private var saver: DebouncedSaver<EpubProgress>? = null
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun start(bookId: Long, defaultTheme: String) {
+    private var requestedFileId: Long? = null
+
+    /** [fileId] picks one of the book's files; null means its EPUB (or first ebook file). */
+    fun start(bookId: Long, fileId: Long?, defaultTheme: String) {
         if (this.bookId == bookId) return
         this.bookId = bookId
+        this.requestedFileId = fileId
         viewModelScope.launch { load(defaultTheme) }
     }
 
@@ -155,12 +160,24 @@ class EpubReaderViewModel @Inject constructor(
         state.update { it.copy(loading = true, error = null) }
         runCatching {
             val book = books.book(bookId)
-            bookFileId = book.ebookFileId
+            val chosen = requestedFileId?.let { id -> book.files.firstOrNull { it.id == id } }
+            bookFileId = chosen?.id ?: book.ebookFileId
+            val isFb2 = (chosen?.bookType ?: book.files.firstOrNull { it.id == bookFileId }?.bookType ?: book.primaryFileType) == "FB2"
             val file = withContext(Dispatchers.IO) {
                 val dir = File(context.cacheDir, "books").apply { mkdirs() }
-                File(dir, "epub_${book.id}.epub").also { f ->
-                    if (!f.exists() || f.length() == 0L) books.downloadToFile(book, bookFileId, f)
+                val suffix = bookFileId?.let { "_$it" } ?: ""
+                val epub = File(dir, "epub_${book.id}$suffix.epub")
+                if (!epub.exists() || epub.length() == 0L) {
+                    if (isFb2) {
+                        // No server route renders FB2; convert it here into the EPUB the reader shows.
+                        val fb2 = File(dir, "fb2_${book.id}$suffix.fb2")
+                        if (!fb2.exists() || fb2.length() == 0L) books.downloadToFile(book, bookFileId, fb2)
+                        Fb2ToEpub.convert(fb2, epub)
+                    } else {
+                        books.downloadToFile(book, bookFileId, epub)
+                    }
                 }
+                epub
             }
             val progress = runCatching { books.epubProgress(bookId) }.getOrNull()
             val theme = settings.epubTheme() ?: defaultTheme
@@ -291,11 +308,12 @@ private class ReaderBridge(private val vm: EpubReaderViewModel, private val tapp
 @Composable
 fun EpubReaderScreen(
     bookId: Long,
+    fileId: Long?,
     onBack: () -> Unit,
-    vm: EpubReaderViewModel = hiltViewModel(key = "epub-$bookId"),
+    vm: EpubReaderViewModel = hiltViewModel(key = "epub-$bookId-${fileId ?: 0}"),
 ) {
     val dark = isSystemInDarkTheme()
-    LaunchedEffect(bookId) { vm.start(bookId, if (dark) "dark" else "light") }
+    LaunchedEffect(bookId, fileId) { vm.start(bookId, fileId, if (dark) "dark" else "light") }
     val state by vm.state.collectAsStateWithLifecycle()
     var chrome by remember { mutableStateOf(true) }
     var sheet by remember { mutableStateOf<String?>(null) }

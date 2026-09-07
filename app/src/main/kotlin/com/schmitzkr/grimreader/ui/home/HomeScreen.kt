@@ -90,6 +90,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun coverUrl(book: Book) = books.coverUrl(book)
+    fun fallbackCoverUrl(book: Book) = if (book.isAudiobook) books.fallbackCoverUrl(book) else null
 
     /** One row per enabled scroller in the server's layout, loaded in parallel. */
     fun load(quiet: Boolean = false) {
@@ -220,6 +221,7 @@ fun HomeScreen(
                                     vm.coverUrl(book),
                                     onClick = { onOpenBook(book.id) },
                                     modifier = Modifier.width(if (book.isAudiobook) 132.dp else 112.dp),
+                                    fallbackUrl = vm.fallbackCoverUrl(book),
                                 )
                             }
                         }

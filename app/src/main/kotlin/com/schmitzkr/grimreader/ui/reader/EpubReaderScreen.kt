@@ -238,6 +238,10 @@ class EpubReaderViewModel @Inject constructor(
     }
 
     fun pageError(message: String) {
+        // The Snackbar this drives is easy to miss or dismiss before it's read;
+        // this is the only path (unlike onConsoleMessage) that makes a page
+        // error findable afterward in a logcat capture.
+        Log.e("EpubReader", "page error: $message")
         state.update { it.copy(syncError = message) }
     }
 

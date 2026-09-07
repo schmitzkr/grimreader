@@ -16,7 +16,8 @@ digital library server. Kotlin and Jetpack Compose.
 ## What works today
 
 - Connect to any Grimmory server, sign in with username and password
-- Home with Continue listening, Continue reading and Recently added
+- Home with the server's own rows, plus Up next in series and Recently
+  finished (each switchable off in Settings)
 - Libraries with status and format filter pills and sorting
 - Book detail with progress and mark finished
 - Audiobook playback: single-file and folder-based books, resume from the

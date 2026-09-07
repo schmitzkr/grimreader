@@ -16,10 +16,14 @@ enum class ScrollerKind(val wire: String, val defaultTitle: String) {
     LAST_LISTENED("lastListened", "Continue Listening"),
     LATEST_ADDED("latestAdded", "Recently Added"),
     RANDOM("random", "Discover Something New"),
-    MAGIC_SHELF("magicShelf", "Magic Shelf");
+    MAGIC_SHELF("magicShelf", "Magic Shelf"),
+
+    /** App-only rows, after the server's; the wire names never come from the server. */
+    UP_NEXT("app.upNext", "Up next in series"),
+    RECENTLY_FINISHED("app.recentlyFinished", "Recently finished");
 
     /** A row of things in progress vanishes when there is nothing in progress. */
-    val hidesWhenEmpty: Boolean get() = this == LAST_READ || this == LAST_LISTENED
+    val hidesWhenEmpty: Boolean get() = this == LAST_READ || this == LAST_LISTENED || this == UP_NEXT || this == RECENTLY_FINISHED
 
     companion object {
         fun fromWire(value: String): ScrollerKind? = entries.firstOrNull { it.wire == value }

@@ -41,6 +41,8 @@ class Settings @Inject constructor(private val context: Context) {
     val oledBlack: Flow<Boolean> = store.data.map { it[OLED_BLACK] ?: false }
     val autoRewind: Flow<Boolean> = store.data.map { it[AUTO_REWIND] ?: true }
     val shakeToReset: Flow<Boolean> = store.data.map { it[SHAKE_TO_RESET] ?: true }
+    val homeUpNext: Flow<Boolean> = store.data.map { it[HOME_UP_NEXT] ?: true }
+    val homeRecentlyFinished: Flow<Boolean> = store.data.map { it[HOME_RECENTLY_FINISHED] ?: true }
 
     suspend fun serverUrlNow(): String? = store.data.first()[SERVER_URL]
 
@@ -53,6 +55,8 @@ class Settings @Inject constructor(private val context: Context) {
     suspend fun setOledBlack(on: Boolean) = store.edit { it[OLED_BLACK] = on }
     suspend fun setAutoRewind(on: Boolean) = store.edit { it[AUTO_REWIND] = on }
     suspend fun setShakeToReset(on: Boolean) = store.edit { it[SHAKE_TO_RESET] = on }
+    suspend fun setHomeUpNext(on: Boolean) = store.edit { it[HOME_UP_NEXT] = on }
+    suspend fun setHomeRecentlyFinished(on: Boolean) = store.edit { it[HOME_RECENTLY_FINISHED] = on }
 
     // ── Library filters, remembered per library ───────────────────────────
 
@@ -160,6 +164,8 @@ class Settings @Inject constructor(private val context: Context) {
         val EPUB_THEME = stringPreferencesKey("epub_theme")
         val EPUB_FONT_PCT = intPreferencesKey("epub_font_pct")
         val SHAKE_TO_RESET = booleanPreferencesKey("shake_to_reset")
+        val HOME_UP_NEXT = booleanPreferencesKey("home_up_next")
+        val HOME_RECENTLY_FINISHED = booleanPreferencesKey("home_recently_finished")
         val PENDING_SESSIONS = stringPreferencesKey("pending_sessions")
     }
 }

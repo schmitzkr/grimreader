@@ -86,12 +86,16 @@ class SettingsViewModel @Inject constructor(
     val oledBlack = settings.oledBlack.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val autoRewind = settings.autoRewind.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val shakeToReset = settings.shakeToReset.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val homeUpNext = settings.homeUpNext.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val homeRecentlyFinished = settings.homeRecentlyFinished.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { settings.setThemeMode(mode) }
     fun setAccent(accent: Accent) = viewModelScope.launch { settings.setAccent(accent.name.lowercase()) }
     fun setOledBlack(on: Boolean) = viewModelScope.launch { settings.setOledBlack(on) }
     fun setAutoRewind(on: Boolean) = viewModelScope.launch { settings.setAutoRewind(on) }
     fun setShakeToReset(on: Boolean) = viewModelScope.launch { settings.setShakeToReset(on) }
+    fun setHomeUpNext(on: Boolean) = viewModelScope.launch { settings.setHomeUpNext(on) }
+    fun setHomeRecentlyFinished(on: Boolean) = viewModelScope.launch { settings.setHomeRecentlyFinished(on) }
     fun signOut() = viewModelScope.launch { auth.signOut() }
     fun changeServer() = viewModelScope.launch { auth.changeServer() }
 }
@@ -106,6 +110,8 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
     val oled by vm.oledBlack.collectAsStateWithLifecycle()
     val autoRewind by vm.autoRewind.collectAsStateWithLifecycle()
     val shakeToReset by vm.shakeToReset.collectAsStateWithLifecycle()
+    val homeUpNext by vm.homeUpNext.collectAsStateWithLifecycle()
+    val homeRecentlyFinished by vm.homeRecentlyFinished.collectAsStateWithLifecycle()
     var confirm by remember { mutableStateOf<String?>(null) }
     var whatsNew by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.ensureLatestKnown() }
@@ -182,6 +188,25 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                     else "${done.size} audiobook${if (done.size == 1) "" else "s"} · ${formatBytes(done.sumOf { it.bytes })}",
                     onOpenDownloads,
                 )
+            }
+        }
+
+        item { SectionLabel("Home", Modifier.padding(0.dp)) }
+        item {
+            GrimCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    ToggleRow(
+                        "Up next in series",
+                        "The next unread book of each series you have finished a book in",
+                        homeUpNext, vm::setHomeUpNext,
+                    )
+                    HorizontalDivider()
+                    ToggleRow(
+                        "Recently finished",
+                        "Books marked finished, newest first",
+                        homeRecentlyFinished, vm::setHomeRecentlyFinished,
+                    )
+                }
             }
         }
 

@@ -76,7 +76,7 @@ fun DownloadsScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit, vm: Download
                         onOpen = { onOpenBook(entry.bookId) },
                         onCancel = { vm.downloads.cancel(entry.bookId) },
                         onRemove = { vm.downloads.remove(entry.bookId) },
-                        onRetry = { vm.downloads.remove(entry.bookId); vm.downloads.download(entry.bookId) },
+                        onRetry = { vm.downloads.download(entry.bookId) },
                     )
                     Spacer(Modifier.height(8.dp))
                 }

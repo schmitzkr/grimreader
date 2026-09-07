@@ -38,8 +38,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import com.schmitzkr.grimreader.core.model.Book
@@ -158,6 +168,18 @@ fun BookDetailScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val playback by vm.player.state.collectAsStateWithLifecycle()
     val downloadStates by vm.downloads.state.collectAsStateWithLifecycle()
+    // The progress notification needs the runtime permission on Android 13+; the download runs either way.
+    var pendingDownload by remember { mutableStateOf<Long?>(null) }
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        pendingDownload?.let { vm.downloads.download(it) }
+        pendingDownload = null
+    }
+    val context = LocalContext.current
+    val startDownload: (Long) -> Unit = { id ->
+        val needsAsk = Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (needsAsk) { pendingDownload = id; askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) } else vm.downloads.download(id)
+    }
     val opening by vm.opening.collectAsStateWithLifecycle()
     val openError by vm.openError.collectAsStateWithLifecycle()
 
@@ -289,7 +311,7 @@ fun BookDetailScreen(
                         val dl = downloadStates[book.id]
                         when {
                             dl == null || dl.status == DownloadStatus.FAILED -> OutlinedButton(
-                                onClick = { if (dl != null) vm.downloads.remove(book.id); vm.downloads.download(book.id) },
+                                onClick = { startDownload(book.id) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Icon(Icons.Rounded.Download, null)

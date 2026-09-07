@@ -59,9 +59,10 @@ data class DownloadState(
  * Books kept on the device: one directory per book with the audio files,
  * the ebook file or every comic page, the cover, and a JSON record of the
  * book (and an audiobook's track layout), so playing or reading needs no
- * network at all. Downloads run in the app process; a download interrupted
- * by the process dying shows as failed on the next launch and can be
- * retried.
+ * network at all. Transfers run here; [DownloadService] holds the process
+ * in the foreground with a progress notification while any are active. A
+ * download interrupted by the process dying shows as failed on the next
+ * launch, and a retry resumes from the files already complete.
  */
 @Singleton
 class DownloadManager @Inject constructor(
@@ -126,6 +127,7 @@ class DownloadManager @Inject constructor(
         if (current?.isActive == true || current?.isDone == true) return
         _state.update { it + (bookId to DownloadState(bookId, current?.title ?: "Book $bookId", current?.author ?: "", DownloadStatus.QUEUED)) }
         jobs[bookId] = scope.launch { run(bookId) }
+        DownloadService.start(context)
     }
 
     fun cancel(bookId: Long) {
@@ -164,9 +166,14 @@ class DownloadManager @Inject constructor(
             }
             var bytes = 0L
             targets.forEachIndexed { i, (url, name) ->
-                bytes += fetch(url, File(dir, name)) { partial ->
+                val target = File(dir, name)
+                // A file is only ever renamed into place once complete, so an
+                // existing one is a finished piece of an interrupted download.
+                bytes += if (target.isFile && target.length() > 0) target.length()
+                else fetch(url, target) { partial ->
                     _state.update { s -> s[bookId]?.let { d -> s + (bookId to d.copy(fraction = (i + partial) / targets.size)) } ?: s }
                 }
+                _state.update { s -> s[bookId]?.let { d -> s + (bookId to d.copy(fraction = (i + 1f) / targets.size)) } ?: s }
             }
             val record = DownloadRecord(book, info, targets.map { it.second }, bytes, System.currentTimeMillis(), kind, fileId, pages)
             File(dir, RECORD).writeText(json.encodeToString(DownloadRecord.serializer(), record))
@@ -214,7 +221,7 @@ class DownloadManager @Inject constructor(
             val id = d.name.toLongOrNull() ?: return@mapNotNull null
             val record = readRecord(d)
             if (record == null) {
-                DownloadState(id, "Book $id", "", DownloadStatus.FAILED, error = "Interrupted before it finished")
+                DownloadState(id, "Book $id", "", DownloadStatus.FAILED, error = "Interrupted before it finished; retry picks up where it stopped")
             } else {
                 DownloadState(id, record.book.title, record.book.authors.joinToString(", "), DownloadStatus.DONE, 1f, record.bytes)
             }

@@ -59,7 +59,7 @@ class LibrariesViewModel @Inject constructor(private val books: BooksRepository)
     fun load() {
         viewModelScope.launch {
             state.value = LibrariesUiState.Loading
-            runCatching { books.libraries() }
+            runCatching { books.librariesWithCounts() }
                 .onSuccess { state.value = LibrariesUiState.Ready(it) }
                 .onFailure { state.value = LibrariesUiState.Error(friendlyError(it)) }
         }

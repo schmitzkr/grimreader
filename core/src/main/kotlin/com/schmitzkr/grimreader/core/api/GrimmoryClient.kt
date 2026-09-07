@@ -162,6 +162,10 @@ class GrimmoryClient(
     fun comicPageUrl(bookId: Long, page: Int): String =
         "${apiBase}media/book/$bookId/cbx/pages/$page"
 
+    /** The primary file for null, else the per-file route (which refuses the primary file). */
+    fun downloadUrl(bookId: Long, fileId: Long?): String =
+        if (fileId == null) "${apiBase}books/$bookId/download" else "${apiBase}books/$bookId/files/$fileId/download"
+
     /** Stores a fresh login or refresh result. */
     fun storeTokens(tokens: AuthTokens) {
         store.replace(tokens.toSession())

@@ -91,7 +91,7 @@
   function spreadFor(widthPx) { return widthPx >= 840 ? 'auto' : 'none'; }
 
   window.reader = {
-    open: function (url, cfi, theme, fontPct) {
+    open: function (url, cfi, theme, fontPct, font, linePct) {
       book = ePub(url);
       rendition = book.renderTo('viewer', {
         width: '100%', height: '100%', flow: 'paginated', spread: spreadFor(window.innerWidth), allowScriptedContent: false
@@ -100,6 +100,8 @@
       Object.keys(themes).forEach(function (k) { rendition.themes.register(k, themes[k]); });
       this.setTheme(theme || 'light');
       this.setFontSize(fontPct || 100);
+      this.setFont(font || 'book');
+      this.setLineHeight(linePct || 100);
       rendition.on('relocated', relocated);
       rendition.hooks.content.register(attachGestures);
       book.ready.then(function () {
@@ -133,6 +135,21 @@
       if (rendition) rendition.themes.select(name);
       document.body.style.background = themes[name].body.background;
     },
-    setFontSize: function (pct) { if (rendition) rendition.themes.fontSize(pct + '%'); }
+    setFontSize: function (pct) { if (rendition) rendition.themes.fontSize(pct + '%'); },
+    /* 'book' keeps the publisher's fonts; the others override every element. */
+    setFont: function (name) {
+      if (!rendition) return;
+      var families = {
+        book: 'inherit',
+        serif: 'Georgia, "Times New Roman", "Noto Serif", serif',
+        sans: 'system-ui, Roboto, "Noto Sans", sans-serif'
+      };
+      rendition.themes.override('font-family', families[name] || 'inherit', name !== 'book');
+    },
+    /* 100 keeps the book's own spacing; otherwise a multiplier on the font size. */
+    setLineHeight: function (pct) {
+      if (!rendition) return;
+      rendition.themes.override('line-height', pct === 100 ? 'inherit' : (pct / 100).toFixed(2), pct !== 100);
+    }
   };
 })();

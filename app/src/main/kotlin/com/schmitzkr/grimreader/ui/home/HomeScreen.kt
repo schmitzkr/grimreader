@@ -34,6 +34,12 @@ import androidx.lifecycle.viewModelScope
 import com.schmitzkr.grimreader.core.dashboard.DASHBOARD_MAX_ITEMS
 import com.schmitzkr.grimreader.core.dashboard.ScrollerKind
 import com.schmitzkr.grimreader.core.dashboard.discoverPick
+import com.schmitzkr.grimreader.core.dashboard.nextInSeries
+import com.schmitzkr.grimreader.core.dashboard.recentlyFinished
+import com.schmitzkr.grimreader.core.dashboard.seriesToContinue
+import com.schmitzkr.grimreader.data.Settings
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.first
 import com.schmitzkr.grimreader.core.dashboard.kind
 import com.schmitzkr.grimreader.core.dashboard.normalizeDashboard
 import com.schmitzkr.grimreader.core.dashboard.scrollerTitle
@@ -78,6 +84,7 @@ sealed interface HomeUiState {
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val books: BooksRepository,
+    private val settings: Settings,
     auth: AuthRepository,
     val updates: UpdateRepository,
 ) : ViewModel() {
@@ -102,12 +109,38 @@ class HomeViewModel @Inject constructor(
             else if (!quiet) _state.value = HomeUiState.Loading
             runCatching {
                 val scrollers = normalizeDashboard(books.dashboardConfig())
-                coroutineScope {
+                val serverRows = coroutineScope {
                     scrollers.map { s -> async { loadRow(s) } }.map { it.await() }
-                }.filterNotNull().filter { !(it.kind.hidesWhenEmpty && it.books.isEmpty()) }
+                }.filterNotNull()
+                (serverRows + appRows()).filter { !(it.kind.hidesWhenEmpty && it.books.isEmpty()) }
             }.onSuccess { _state.value = HomeUiState.Ready(it) }
                 .onFailure { if (current !is HomeUiState.Ready) _state.value = HomeUiState.Error(friendlyError(it)) }
         }
+    }
+
+    /**
+     * Rows the server layout has no kind for, after its own, each
+     * switchable off in Settings. Both come from one fetch of the finished
+     * books; Up next then reads each recently finished series once.
+     */
+    private suspend fun appRows(): List<HomeRow> {
+        val wantUpNext = settings.homeUpNext.first()
+        val wantFinished = settings.homeRecentlyFinished.first()
+        if (!wantUpNext && !wantFinished) return emptyList()
+        val finished = runCatching { books.finishedBooks() }.getOrDefault(emptyList())
+        val rows = mutableListOf<HomeRow>()
+        if (wantUpNext) {
+            val next = coroutineScope {
+                seriesToContinue(finished, 10).map { name ->
+                    async { runCatching { nextInSeries(books.seriesBooks(name)) }.getOrNull() }
+                }.awaitAll()
+            }.filterNotNull()
+            rows += HomeRow("app-up-next", ScrollerKind.UP_NEXT.defaultTitle, ScrollerKind.UP_NEXT, next)
+        }
+        if (wantFinished) {
+            rows += HomeRow("app-recently-finished", ScrollerKind.RECENTLY_FINISHED.defaultTitle, ScrollerKind.RECENTLY_FINISHED, recentlyFinished(finished, DASHBOARD_MAX_ITEMS))
+        }
+        return rows
     }
 
     private suspend fun loadRow(s: DashboardScroller): HomeRow? {
@@ -122,6 +155,8 @@ class HomeViewModel @Inject constructor(
                 ScrollerKind.MAGIC_SHELF -> sortBooks(
                     books.magicShelfBooks(s.magicShelfId!!, size = max * 5), s.sortField, s.sortDirection,
                 ).take(max)
+                // Never in a server layout; built by appRows instead.
+                ScrollerKind.UP_NEXT, ScrollerKind.RECENTLY_FINISHED -> emptyList()
             }
         }.getOrElse { emptyList() }
         return HomeRow(

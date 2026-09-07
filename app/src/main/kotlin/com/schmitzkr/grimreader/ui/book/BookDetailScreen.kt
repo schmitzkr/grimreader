@@ -247,28 +247,6 @@ fun BookDetailScreen(
                             Spacer(Modifier.width(8.dp))
                             Text(if (isCurrent) "Now playing" else if ((progress ?: 0.0) > 0) "Continue" else "Listen")
                         }
-                        Spacer(Modifier.height(10.dp))
-                        val dl = downloadStates[book.id]
-                        when {
-                            dl == null || dl.status == DownloadStatus.FAILED -> OutlinedButton(
-                                onClick = { if (dl != null) vm.downloads.remove(book.id); vm.downloads.download(book.id) },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Icon(Icons.Rounded.Download, null)
-                                Spacer(Modifier.width(8.dp))
-                                Text(if (dl == null) "Download for offline" else "Download failed · Retry")
-                            }
-                            dl.isActive -> OutlinedButton(onClick = { vm.downloads.cancel(book.id) }, modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.Rounded.Close, null)
-                                Spacer(Modifier.width(8.dp))
-                                Text(if (dl.status == DownloadStatus.QUEUED) "Waiting… · Cancel" else "Downloading ${(dl.fraction * 100).toInt()}% · Cancel")
-                            }
-                            else -> OutlinedButton(onClick = { vm.downloads.remove(book.id) }, modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.Rounded.DownloadDone, null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("On this device · ${formatBytes(dl.bytes)} · Remove")
-                            }
-                        }
                     } else {
                         val pageFormat = PageFormat.entries.firstOrNull { book.primaryFileType == it.bookType || book.fileIdFor(it) != null }
                         val hasEpub = book.primaryFileType == "EPUB" || book.files.any { it.bookType == "EPUB" }
@@ -303,6 +281,31 @@ fun BookDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
                             )
+                        }
+                    }
+                    // Audio, ebooks and comics alike can be kept on the device.
+                    if (DownloadManager.kindOf(book) != null) {
+                        Spacer(Modifier.height(10.dp))
+                        val dl = downloadStates[book.id]
+                        when {
+                            dl == null || dl.status == DownloadStatus.FAILED -> OutlinedButton(
+                                onClick = { if (dl != null) vm.downloads.remove(book.id); vm.downloads.download(book.id) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Rounded.Download, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (dl == null) "Download for offline" else "Download failed · Retry")
+                            }
+                            dl.isActive -> OutlinedButton(onClick = { vm.downloads.cancel(book.id) }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Rounded.Close, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (dl.status == DownloadStatus.QUEUED) "Waiting… · Cancel" else "Downloading ${(dl.fraction * 100).toInt()}% · Cancel")
+                            }
+                            else -> OutlinedButton(onClick = { vm.downloads.remove(book.id) }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Rounded.DownloadDone, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("On this device · ${formatBytes(dl.bytes)} · Remove")
+                            }
                         }
                     }
                     Spacer(Modifier.height(10.dp))

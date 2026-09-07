@@ -26,11 +26,18 @@ import javax.inject.Singleton
 @Serializable
 data class DownloadRecord(
     val book: Book,
-    val info: AudiobookInfo,
-    /** File names inside the book's directory, in track order (one entry for a single stream). */
+    /** Track layout for an audiobook; null for the other kinds. */
+    val info: AudiobookInfo? = null,
+    /** File names inside the book's directory: tracks in order, comic pages in order, or the one book file. */
     val files: List<String>,
     val bytes: Long,
     val downloadedAt: Long,
+    /** AUDIOBOOK, EPUB, FB2, PDF or CBX. */
+    val kind: String = "AUDIOBOOK",
+    /** The server's file id for an ebook, when it was not the primary file. */
+    val fileId: Long? = null,
+    /** The server's page numbers for a comic, matching [files]. */
+    val pages: List<Int> = emptyList(),
 )
 
 enum class DownloadStatus { QUEUED, DOWNLOADING, DONE, FAILED }
@@ -49,11 +56,12 @@ data class DownloadState(
 }
 
 /**
- * Audiobooks kept on the device: one directory per book with the audio
- * files, the cover, and a JSON record of the book and its track layout,
- * so playback needs no network at all. Downloads run in the app process;
- * a download interrupted by the process dying shows as failed on the next
- * launch and can be retried.
+ * Books kept on the device: one directory per book with the audio files,
+ * the ebook file or every comic page, the cover, and a JSON record of the
+ * book (and an audiobook's track layout), so playing or reading needs no
+ * network at all. Downloads run in the app process; a download interrupted
+ * by the process dying shows as failed on the next launch and can be
+ * retried.
  */
 @Singleton
 class DownloadManager @Inject constructor(
@@ -95,6 +103,24 @@ class DownloadManager @Inject constructor(
 
     fun localCover(bookId: Long): File? = localFile(bookId, COVER)
 
+    /** The downloaded ebook file (EPUB, FB2 or PDF), or null for other kinds. */
+    fun localBookFile(bookId: Long): File? {
+        val record = record(bookId) ?: return null
+        if (record.kind == "AUDIOBOOK" || record.kind == "CBX") return null
+        return record.files.firstOrNull()?.let { localFile(bookId, it) }
+    }
+
+    /** Every downloaded comic page in reading order, or null unless all are present. */
+    fun localPages(bookId: Long): List<File>? {
+        val record = record(bookId) ?: return null
+        if (record.kind != "CBX") return null
+        val files = record.files.mapNotNull { localFile(bookId, it) }
+        return files.takeIf { it.size == record.files.size && it.isNotEmpty() }
+    }
+
+    /** Where every downloaded book lives, for serving files to the reader page. */
+    val downloadsRoot: File get() = root
+
     fun download(bookId: Long) {
         val current = _state.value[bookId]
         if (current?.isActive == true || current?.isDone == true) return
@@ -114,21 +140,35 @@ class DownloadManager @Inject constructor(
         val dir = dir(bookId).apply { mkdirs() }
         try {
             val book = books.book(bookId)
-            val info = books.audiobookInfo(bookId)
+            val kind = kindOf(book) ?: error("This book has nothing the app can keep offline")
             _state.update { it + (bookId to DownloadState(bookId, book.title, book.authors.joinToString(", "), DownloadStatus.DOWNLOADING)) }
-            val targets: List<Pair<String, String>> = if (info.folderBased && info.tracks.isNotEmpty()) {
-                info.tracks.map { books.trackStreamUrl(bookId, it.index) to "track_${it.index}${extensionOf(it.fileName)}" }
-            } else {
-                listOf(books.streamUrl(bookId) to "stream")
-            }
             runCatching { fetch(books.coverUrl(book), File(dir, COVER)) {} }
+            var info: AudiobookInfo? = null
+            var fileId: Long? = null
+            var pages: List<Int> = emptyList()
+            val targets: List<Pair<String, String>> = when (kind) {
+                "AUDIOBOOK" -> {
+                    val i = books.audiobookInfo(bookId).also { info = it }
+                    if (i.folderBased && i.tracks.isNotEmpty()) i.tracks.map { books.trackStreamUrl(bookId, it.index) to "track_${it.index}${extensionOf(it.fileName)}" }
+                    else listOf(books.streamUrl(bookId) to "stream")
+                }
+                "CBX" -> {
+                    pages = books.comicPages(bookId)
+                    pages.map { books.comicPageUrl(bookId, it) to "page_%05d".format(it) }
+                }
+                else -> {
+                    val file = book.files.firstOrNull { it.bookType == kind }
+                    fileId = file?.id
+                    listOf(books.downloadUrl(book, fileId) to "book.${(file?.extension ?: kind).lowercase().removePrefix(".")}")
+                }
+            }
             var bytes = 0L
             targets.forEachIndexed { i, (url, name) ->
                 bytes += fetch(url, File(dir, name)) { partial ->
                     _state.update { s -> s[bookId]?.let { d -> s + (bookId to d.copy(fraction = (i + partial) / targets.size)) } ?: s }
                 }
             }
-            val record = DownloadRecord(book, info, targets.map { it.second }, bytes, System.currentTimeMillis())
+            val record = DownloadRecord(book, info, targets.map { it.second }, bytes, System.currentTimeMillis(), kind, fileId, pages)
             File(dir, RECORD).writeText(json.encodeToString(DownloadRecord.serializer(), record))
             _state.update { it + (bookId to DownloadState(bookId, book.title, book.authors.joinToString(", "), DownloadStatus.DONE, 1f, bytes)) }
         } catch (e: CancellationException) {
@@ -192,6 +232,14 @@ class DownloadManager @Inject constructor(
 
     companion object {
         private const val TAG = "Downloads"
+        private val READABLE = listOf("EPUB", "FB2", "PDF", "CBX")
+
+        /** What a download of [book] keeps: its audio, or its primary readable file, or the first readable one. */
+        fun kindOf(book: Book): String? = when {
+            book.isAudiobook -> "AUDIOBOOK"
+            else -> book.primaryFileType?.takeIf { it in READABLE }
+                ?: READABLE.firstOrNull { k -> book.files.any { it.bookType == k } }
+        }
         const val RECORD = "record.json"
         const val COVER = "cover.jpg"
 

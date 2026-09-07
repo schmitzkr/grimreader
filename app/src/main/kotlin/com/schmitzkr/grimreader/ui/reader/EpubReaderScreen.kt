@@ -81,6 +81,7 @@ import com.schmitzkr.grimreader.core.fb2.Fb2ToEpub
 import com.schmitzkr.grimreader.core.model.Bookmark
 import com.schmitzkr.grimreader.core.model.EpubProgress
 import com.schmitzkr.grimreader.data.BooksRepository
+import com.schmitzkr.grimreader.data.DownloadManager
 import com.schmitzkr.grimreader.data.SessionKind
 import com.schmitzkr.grimreader.data.SessionRepository
 import com.schmitzkr.grimreader.data.Settings
@@ -118,6 +119,10 @@ data class EpubUiState(
     val toc: List<TocEntry> = emptyList(),
     val theme: String = "light",
     val fontPct: Int = 100,
+    /** `book`, `serif` or `sans`. */
+    val font: String = "book",
+    /** Line height as a percentage of the font size; 100 is the book's own. */
+    val linePct: Int = 100,
     val bookmarks: List<Bookmark> = emptyList(),
     val exiting: Boolean = false,
     val syncError: String? = null,
@@ -134,6 +139,7 @@ class EpubReaderViewModel @Inject constructor(
     private val books: BooksRepository,
     private val settings: Settings,
     private val sessions: SessionRepository,
+    private val downloads: DownloadManager,
     private val context: Context,
 ) : ViewModel() {
     val state = MutableStateFlow(EpubUiState())
@@ -159,29 +165,40 @@ class EpubReaderViewModel @Inject constructor(
     private suspend fun load(defaultTheme: String) {
         state.update { it.copy(loading = true, error = null) }
         runCatching {
-            val book = books.book(bookId)
+            // A downloaded copy is used whenever it is the file asked for; the book itself opens from its record offline.
+            val local = downloads.record(bookId)?.takeIf { (it.kind == "EPUB" || it.kind == "FB2") && (requestedFileId == null || requestedFileId == it.fileId) }
+            val book = runCatching { books.book(bookId) }.getOrElse { downloads.record(bookId)?.book ?: throw it }
             val chosen = requestedFileId?.let { id -> book.files.firstOrNull { it.id == id } }
-            bookFileId = chosen?.id ?: book.ebookFileId
-            val isFb2 = (chosen?.bookType ?: book.files.firstOrNull { it.id == bookFileId }?.bookType ?: book.primaryFileType) == "FB2"
-            val file = withContext(Dispatchers.IO) {
-                val dir = File(context.cacheDir, "books").apply { mkdirs() }
-                val suffix = bookFileId?.let { "_$it" } ?: ""
-                val epub = File(dir, "epub_${book.id}$suffix.epub")
-                if (!epub.exists() || epub.length() == 0L) {
-                    if (isFb2) {
-                        // No server route renders FB2; convert it here into the EPUB the reader shows.
-                        val fb2 = File(dir, "fb2_${book.id}$suffix.fb2")
-                        if (!fb2.exists() || fb2.length() == 0L) books.downloadToFile(book, bookFileId, fb2)
-                        Fb2ToEpub.convert(fb2, epub)
-                    } else {
-                        books.downloadToFile(book, bookFileId, epub)
+            bookFileId = chosen?.id ?: local?.fileId ?: book.ebookFileId
+            val isFb2 = local?.kind == "FB2" ||
+                (local == null && (chosen?.bookType ?: book.files.firstOrNull { it.id == bookFileId }?.bookType ?: book.primaryFileType) == "FB2")
+            val localFile = local?.let { downloads.localBookFile(bookId) }
+            val fileUrl = withContext(Dispatchers.IO) {
+                if (localFile != null && !isFb2) {
+                    "$ORIGIN/downloads/${book.id}/${localFile.name}"
+                } else {
+                    val dir = File(context.cacheDir, "books").apply { mkdirs() }
+                    val suffix = bookFileId?.let { "_$it" } ?: ""
+                    val epub = File(dir, "epub_${book.id}$suffix.epub")
+                    if (!epub.exists() || epub.length() == 0L) {
+                        if (isFb2) {
+                            // No server route renders FB2; convert it here into the EPUB the reader shows.
+                            val fb2 = localFile ?: File(dir, "fb2_${book.id}$suffix.fb2").also { f ->
+                                if (!f.exists() || f.length() == 0L) books.downloadToFile(book, bookFileId, f)
+                            }
+                            Fb2ToEpub.convert(fb2, epub)
+                        } else {
+                            books.downloadToFile(book, bookFileId, epub)
+                        }
                     }
+                    "$ORIGIN/books/${epub.name}"
                 }
-                epub
             }
             val progress = runCatching { books.epubProgress(bookId) }.getOrNull()
             val theme = settings.epubTheme() ?: defaultTheme
             val font = settings.epubFontPct()
+            val family = settings.epubFont()
+            val line = settings.epubLinePct()
             saver = DebouncedSaver(
                 scope = viewModelScope,
                 persist = { books.saveEpubProgress(bookId, it, bookFileId) },
@@ -190,9 +207,9 @@ class EpubReaderViewModel @Inject constructor(
             state.update {
                 it.copy(
                     loading = false, title = book.title,
-                    fileUrl = "$ORIGIN/books/${file.name}",
+                    fileUrl = fileUrl,
                     initialCfi = progress?.cfi, cfi = progress?.cfi, percentage = progress?.percentage ?: 0.0,
-                    theme = theme, fontPct = font,
+                    theme = theme, fontPct = font, font = family, linePct = line,
                 )
             }
             loadBookmarks()
@@ -230,6 +247,19 @@ class EpubReaderViewModel @Inject constructor(
         state.update { it.copy(theme = name) }
         js("reader.setTheme(${JSONObject.quote(name)})")
         viewModelScope.launch { settings.setEpubTheme(name) }
+    }
+
+    fun setFont(name: String) {
+        state.update { it.copy(font = name) }
+        js("reader.setFont(${JSONObject.quote(name)})")
+        viewModelScope.launch { settings.setEpubFont(name) }
+    }
+
+    fun adjustLine(delta: Int) {
+        val pct = (state.value.linePct + delta).coerceIn(100, 220)
+        state.update { it.copy(linePct = pct) }
+        js("reader.setLineHeight($pct)")
+        viewModelScope.launch { settings.setEpubLinePct(pct) }
     }
 
     fun adjustFont(delta: Int) {
@@ -343,7 +373,10 @@ fun EpubReaderScreen(
         val url = state.fileUrl ?: return@LaunchedEffect
         if (!pageLoaded) return@LaunchedEffect
         val cfi = state.initialCfi?.let { JSONObject.quote(it) } ?: "null"
-        webView?.evaluateJavascript("reader.open(${JSONObject.quote(url)}, $cfi, ${JSONObject.quote(state.theme)}, ${state.fontPct})", null)
+        webView?.evaluateJavascript(
+            "reader.open(${JSONObject.quote(url)}, $cfi, ${JSONObject.quote(state.theme)}, ${state.fontPct}, ${JSONObject.quote(state.font)}, ${state.linePct})",
+            null,
+        )
     }
     LaunchedEffect(webView) {
         val w = webView ?: return@LaunchedEffect
@@ -366,6 +399,7 @@ fun EpubReaderScreen(
                         .setDomain("appassets.androidplatform.net")
                         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
                         .addPathHandler("/books/", WebViewAssetLoader.InternalStoragePathHandler(ctx, File(ctx.cacheDir, "books")))
+                        .addPathHandler("/downloads/", WebViewAssetLoader.InternalStoragePathHandler(ctx, File(ctx.filesDir, "downloads")))
                         .build()
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
@@ -387,31 +421,25 @@ fun EpubReaderScreen(
         }
 
         AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
-            Row(
-                Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.6f)).statusBarsPadding().padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White) }
+            ReaderBar(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp)) {
+                IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
                 Column(Modifier.weight(1f)) {
-                    Text(state.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(state.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (state.chapter.isNotBlank()) {
-                        Text(state.chapter, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(state.chapter, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 val here = state.bookmarks.any { it.cfi == state.cfi }
                 IconButton(onClick = { if (!here) vm.addBookmark(); sheet = "bookmarks" }) {
-                    Icon(if (here) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, "Bookmarks", tint = Color.White)
+                    Icon(if (here) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, "Bookmarks", tint = if (here) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                 }
-                IconButton(onClick = { sheet = "chapters" }) { Icon(Icons.AutoMirrored.Rounded.List, "Chapters", tint = Color.White) }
-                IconButton(onClick = { sheet = "display" }) { Icon(Icons.Rounded.FormatSize, "Display", tint = Color.White) }
+                IconButton(onClick = { sheet = "chapters" }) { Icon(Icons.AutoMirrored.Rounded.List, "Chapters") }
+                IconButton(onClick = { sheet = "display" }) { Icon(Icons.Rounded.FormatSize, "Display") }
             }
         }
         AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
-            Row(
-                Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.6f)).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page", tint = Color.White) }
+            ReaderBar(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
+                IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page") }
                 var drag by remember { mutableStateOf<Float?>(null) }
                 Slider(
                     value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
@@ -420,8 +448,8 @@ fun EpubReaderScreen(
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("${((drag?.times(100)) ?: state.percentage).toInt()}%", color = Color.White, style = MaterialTheme.typography.labelLarge)
-                IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page", tint = Color.White) }
+                Text("${((drag?.times(100)) ?: state.percentage).toInt()}%", style = MaterialTheme.typography.labelLarge)
+                IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
             }
         }
         if (state.exiting) {
@@ -498,6 +526,26 @@ fun EpubReaderScreen(
                     TextButton(onClick = { vm.adjustFont(-10) }, enabled = state.fontPct > 70) { Text("A−") }
                     Text("${state.fontPct}%", style = MaterialTheme.typography.labelLarge)
                     TextButton(onClick = { vm.adjustFont(10) }, enabled = state.fontPct < 200) { Text("A+") }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Font", style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(6.dp))
+                val fonts = listOf("book" to "Book's own", "serif" to "Serif", "sans" to "Sans")
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    fonts.forEachIndexed { i, (key, label) ->
+                        SegmentedButton(
+                            selected = state.font == key,
+                            onClick = { vm.setFont(key) },
+                            shape = SegmentedButtonDefaults.itemShape(i, fonts.size),
+                        ) { Text(label) }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Line spacing", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.adjustLine(-20) }, enabled = state.linePct > 100) { Text("−") }
+                    Text(if (state.linePct == 100) "Book's own" else "${state.linePct}%", style = MaterialTheme.typography.labelLarge)
+                    TextButton(onClick = { vm.adjustLine(20) }, enabled = state.linePct < 220) { Text("+") }
                 }
             }
         }

@@ -31,6 +31,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import java.io.IOException
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -61,6 +65,23 @@ class BooksRepository @Inject constructor(
     }
 
     suspend fun libraries(): List<Library> = api.libraries()
+
+    /**
+     * Libraries with a real book count. The server's list endpoint leaves
+     * `bookCount` at zero, so each library missing one is counted through
+     * the paged books endpoint (one page of one, only the total is read),
+     * all in parallel. A count that fails stays at zero rather than
+     * failing the list.
+     */
+    suspend fun librariesWithCounts(): List<Library> = coroutineScope {
+        libraries().map { library ->
+            if (library.bookCount > 0) CompletableDeferred(library)
+            else async {
+                val total = runCatching { api.books(libraryId = library.id, page = 0, size = 1).totalElements }.getOrDefault(0L)
+                library.copy(bookCount = total.toInt())
+            }
+        }.awaitAll()
+    }
 
     suspend fun libraryBooks(
         libraryId: Long,
@@ -104,6 +125,9 @@ class BooksRepository @Inject constructor(
     ).content
 
     suspend fun recentlyAdded(limit: Int = 20): List<Book> = api.recentlyAdded(limit)
+
+    /** Books marked read; the order is applied client-side from lastReadTime. */
+    suspend fun finishedBooks(size: Int = 100): List<Book> = api.books(status = "READ", page = 0, size = size).content
 
     suspend fun randomBooks(size: Int = 20, libraryId: Long? = null): List<Book> = api.randomBooks(size, libraryId)
 
@@ -205,6 +229,8 @@ class BooksRepository @Inject constructor(
     suspend fun comicPages(bookId: Long): List<Int> = api.comicPages(bookId)
 
     fun comicPageUrl(bookId: Long, page: Int): String = client().comicPageUrl(bookId, page)
+
+    fun downloadUrl(book: Book, fileId: Long?): String = client().downloadUrl(book.id, book.downloadFileId(fileId))
 
     /**
      * Streams a book file to [target] (through a temp file, so a half

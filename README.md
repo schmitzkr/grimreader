@@ -16,7 +16,8 @@ digital library server. Kotlin and Jetpack Compose.
 ## What works today
 
 - Connect to any Grimmory server, sign in with username and password
-- Home with Continue listening, Continue reading and Recently added
+- Home with the server's own rows, plus Up next in series and Recently
+  finished (each switchable off in Settings)
 - Libraries with status and format filter pills and sorting
 - Book detail with progress and mark finished
 - Audiobook playback: single-file and folder-based books, resume from the
@@ -29,13 +30,15 @@ digital library server. Kotlin and Jetpack Compose.
   device and opens in the EPUB reader; MOBI, AZW3 and supplementary files
   can be handed to another app; a book's files are listed on its page
 - EPUB reader: chapters, bookmarks, light, sepia and dark pages, text size,
+  font choice and line spacing,
   swipe or tap to turn, progress saved as the same CFI and percentage the
   web reader uses so both open at the same place
 - Comic (CBX) and PDF readers: pinch to zoom, double-tap, page slider,
   right-to-left reading for manga, night mode for PDFs, progress saved to
   the server so the web reader opens on the same page
-- Download an audiobook for offline listening: it plays from the device
-  with no network, a Downloaded pill filters each library, and Settings →
+- Download any book for offline use: audiobooks play, EPUB, FB2 and PDF
+  open in their readers and comics keep every page, all from the device
+  with no network; a Downloaded pill filters each library, and Settings →
   Downloads lists what is on the device with sizes and removal
 - Positions saved on the device first and pushed to the server, so a lost
   connection never loses your place; pending saves retry on their own
@@ -45,8 +48,9 @@ digital library server. Kotlin and Jetpack Compose.
   past-year grid, last seven days of listening, audiobooks in progress
 - Shake to reset a running sleep timer; libraries remember their sort and
   filter pills
-- Floating mini player and navigation bar, neutral theme with a choice of
-  accent, pure-black option for OLED screens
+- Floating mini player and navigation bar, the same floating chrome inside
+  the readers, neutral theme with a choice of accent, pure-black option for
+  OLED screens
 
 ## Coming next
 

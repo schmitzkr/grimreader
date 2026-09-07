@@ -55,6 +55,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.LaunchedEffect
+import com.schmitzkr.grimreader.ui.adaptive.ReadableWidth
 import com.schmitzkr.grimreader.ui.components.GrimCard
 import com.schmitzkr.grimreader.ui.components.SectionLabel
 import com.schmitzkr.grimreader.ui.theme.Accent
@@ -110,6 +111,7 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
     var whatsNew by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.ensureLatestKnown() }
 
+    ReadableWidth {
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 160.dp),
@@ -249,6 +251,7 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                 )
             }
         }
+    }
     }
 
     confirm?.let { which ->

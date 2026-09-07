@@ -51,6 +51,7 @@ import com.schmitzkr.grimreader.core.stats.streakColumns
 import com.schmitzkr.grimreader.core.stats.timelineWeekOf
 import com.schmitzkr.grimreader.core.stats.weekTotals
 import com.schmitzkr.grimreader.data.StatsRepository
+import com.schmitzkr.grimreader.ui.adaptive.ReadableWidth
 import com.schmitzkr.grimreader.ui.components.EmptyState
 import com.schmitzkr.grimreader.ui.components.ErrorState
 import com.schmitzkr.grimreader.ui.components.GrimCard
@@ -134,6 +135,7 @@ class StatsViewModel @Inject constructor(private val stats: StatsRepository) : V
 @Composable
 fun StatsScreen(onBack: () -> Unit, vm: StatsViewModel = hiltViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    ReadableWidth {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
@@ -148,6 +150,7 @@ fun StatsScreen(onBack: () -> Unit, vm: StatsViewModel = hiltViewModel()) {
             is StatsUiState.Error -> ErrorState(s.message, onRetry = vm::load)
             is StatsUiState.Ready -> StatsBody(s.data)
         }
+    }
     }
 }
 

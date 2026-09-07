@@ -48,6 +48,8 @@ import com.schmitzkr.grimreader.ui.components.ErrorState
 import com.schmitzkr.grimreader.ui.components.LoadingState
 import com.schmitzkr.grimreader.ui.components.SectionLabel
 import com.schmitzkr.grimreader.ui.components.UpdateBanner
+import com.schmitzkr.grimreader.ui.adaptive.WindowWidth
+import com.schmitzkr.grimreader.ui.adaptive.rememberWindowWidth
 import com.schmitzkr.grimreader.ui.friendlyError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
@@ -143,6 +145,7 @@ fun HomeScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val user by vm.user.collectAsStateWithLifecycle()
     val update by vm.updates.state.collectAsStateWithLifecycle()
+    val wide = rememberWindowWidth() == WindowWidth.EXPANDED
 
     when (val s = state) {
         HomeUiState.Loading -> LoadingState()
@@ -220,7 +223,9 @@ fun HomeScreen(
                                     book,
                                     vm.coverUrl(book),
                                     onClick = { onOpenBook(book.id) },
-                                    modifier = Modifier.width(if (book.isAudiobook) 132.dp else 112.dp),
+                                    modifier = Modifier.width(
+                                        if (book.isAudiobook) (if (wide) 160.dp else 132.dp) else (if (wide) 136.dp else 112.dp),
+                                    ),
                                     fallbackUrl = vm.fallbackCoverUrl(book),
                                 )
                             }

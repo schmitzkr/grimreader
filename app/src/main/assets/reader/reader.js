@@ -87,12 +87,16 @@
 
   function fail(e) { report('onError', String((e && e.message) || e)); }
 
+  /* Two columns once the page is tablet-wide (a landscape tablet, a desktop window); one on phones. */
+  function spreadFor(widthPx) { return widthPx >= 840 ? 'auto' : 'none'; }
+
   window.reader = {
     open: function (url, cfi, theme, fontPct) {
       book = ePub(url);
       rendition = book.renderTo('viewer', {
-        width: '100%', height: '100%', flow: 'paginated', spread: 'none', allowScriptedContent: false
+        width: '100%', height: '100%', flow: 'paginated', spread: spreadFor(window.innerWidth), allowScriptedContent: false
       });
+      window.addEventListener('resize', function () { if (rendition) rendition.spread(spreadFor(window.innerWidth)); });
       Object.keys(themes).forEach(function (k) { rendition.themes.register(k, themes[k]); });
       this.setTheme(theme || 'light');
       this.setFontSize(fontPct || 100);

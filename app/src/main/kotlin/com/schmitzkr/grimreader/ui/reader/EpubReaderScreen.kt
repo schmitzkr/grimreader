@@ -86,6 +86,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.webkit.WebViewAssetLoader
+import com.schmitzkr.grimreader.BuildConfig
 import com.schmitzkr.grimreader.core.fb2.Fb2ToEpub
 import com.schmitzkr.grimreader.core.model.Bookmark
 import com.schmitzkr.grimreader.core.model.EpubProgress
@@ -460,6 +461,11 @@ fun EpubReaderScreen(
                             MimeCorrectingPathHandler(WebViewAssetLoader.InternalStoragePathHandler(ctx, File(ctx.filesDir, "downloads")), readerMimeOverrides),
                         )
                         .build()
+                    // Debug builds only: lets `chrome://inspect` on a connected computer attach
+                    // to this WebView for live DOM/CSS inspection -- the actual iframe epub.js
+                    // renders into, its size, and whether its body ever gets real content, none
+                    // of which onConsoleMessage/onError can show since nothing here is throwing.
+                    if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
                         settings.allowFileAccess = false

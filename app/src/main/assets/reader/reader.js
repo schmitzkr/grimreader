@@ -89,6 +89,39 @@
 
   function fail(e) { report('onError', String((e && e.message) || e)); }
 
+  /*
+   * Diagnostic only, logged via console.log -> onConsoleMessage -> Logcat:
+   * relocated() firing proves epub.js believes navigation succeeded, but
+   * that says nothing about whether its rendered iframe actually landed in
+   * the DOM at a nonzero size with real content inside it. This answers
+   * that directly instead of guessing from the outside.
+   */
+  function logViewerState(label) {
+    try {
+      var viewer = document.getElementById('viewer');
+      var rect = viewer.getBoundingClientRect();
+      var info = label + ': viewer children=' + viewer.children.length + ' rect=' + rect.width + 'x' + rect.height;
+      var iframe = viewer.querySelector('iframe');
+      if (!iframe) {
+        info += ' no-iframe-found';
+      } else {
+        var irect = iframe.getBoundingClientRect();
+        info += ' iframe rect=' + irect.width + 'x' + irect.height + ' attrs(w,h)=' + iframe.width + ',' + iframe.height;
+        try {
+          var idoc = iframe.contentDocument;
+          info += idoc
+            ? (' bodyChildren=' + (idoc.body ? idoc.body.children.length : 'no-body') + ' bodyTextLen=' + (idoc.body ? idoc.body.textContent.length : 0))
+            : ' contentDocument=null';
+        } catch (e) {
+          info += ' contentDocument access threw: ' + ((e && e.message) || e);
+        }
+      }
+      console.log(info);
+    } catch (e) {
+      console.log('logViewerState threw: ' + ((e && e.message) || e));
+    }
+  }
+
   /* Two columns once the page is tablet-wide (a landscape tablet, a desktop window); one on phones. */
   function spreadFor(widthPx) { return widthPx >= 840 ? 'auto' : 'none'; }
 
@@ -112,6 +145,7 @@
           if (!rendition) return;
           rendition.resize();
           rendition.spread(spreadFor(window.innerWidth));
+          logViewerState('after-resize-event');
         });
         Object.keys(themes).forEach(function (k) { rendition.themes.register(k, themes[k]); });
         this.setTheme(theme || 'light');
@@ -137,6 +171,7 @@
            * it -- content can otherwise "load" (relocated still reports a
            * real chapter/CFI) while rendering into an invisible area. */
           if (rendition) rendition.resize();
+          logViewerState('after-display');
         }).catch(fail);
       } catch (e) {
         fail(e);

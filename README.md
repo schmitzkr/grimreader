@@ -44,8 +44,9 @@ digital library server. Kotlin and Jetpack Compose.
   past-year grid, last seven days of listening, audiobooks in progress
 - Shake to reset a running sleep timer; libraries remember their sort and
   filter pills
-- Floating mini player and navigation bar, neutral theme with a choice of
-  accent, pure-black option for OLED screens
+- Floating mini player and navigation bar, the same floating chrome inside
+  the readers, neutral theme with a choice of accent, pure-black option for
+  OLED screens
 
 ## Coming next
 

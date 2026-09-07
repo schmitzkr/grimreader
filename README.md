@@ -24,6 +24,9 @@ digital library server. Kotlin and Jetpack Compose.
   chapters, speed (remembered per book), sleep timer with fade-out,
   auto-rewind after a pause, notification and lock-screen controls,
   Android Auto browsing
+- Every file type the server stores has a path: FB2 is converted on the
+  device and opens in the EPUB reader; MOBI, AZW3 and supplementary files
+  can be handed to another app; a book's files are listed on its page
 - EPUB reader: chapters, bookmarks, light, sepia and dark pages, text size,
   swipe or tap to turn, progress saved as the same CFI and percentage the
   web reader uses so both open at the same place

@@ -2,4 +2,6 @@
 <!-- Lets the package installer read a downloaded update out of the cache. -->
 <paths>
     <cache-path name="updates" path="updates/" />
+    <!-- Files fetched to hand to another app (formats with no reader here). -->
+    <cache-path name="share" path="share/" />
 </paths>

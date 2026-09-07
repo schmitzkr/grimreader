@@ -118,7 +118,26 @@ data class BookFile(
     val bookType: String? = null,
     @SerialName("primary") val isPrimary: Boolean = false,
     val folderBased: Boolean = false,
-)
+    val fileName: String? = null,
+    val extension: String? = null,
+    val fileSizeKb: Long? = null,
+    /** False for a supplementary file (a cover scan, a sample chapter) rather than the book itself. */
+    @SerialName("book") val isBook: Boolean = true,
+) {
+    /** How the app opens this file, or null when it can only hand it to another app. */
+    val reader: FileReader?
+        get() = when (bookType) {
+            "AUDIOBOOK" -> FileReader.AUDIO
+            "EPUB", "FB2" -> FileReader.EPUB
+            "PDF" -> FileReader.PDF
+            "CBX" -> FileReader.CBX
+            else -> null
+        }
+
+    val displayName: String get() = fileName ?: (bookType ?: extension ?: "File")
+}
+
+enum class FileReader { AUDIO, EPUB, PDF, CBX }
 
 /** Comics and PDFs share one page-based progress shape. */
 enum class PageFormat(val bookType: String, val progressKey: String) {

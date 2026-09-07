@@ -95,6 +95,12 @@ class Settings @Inject constructor(private val context: Context) {
     suspend fun setEpubTheme(name: String) = store.edit { it[EPUB_THEME] = name }
     suspend fun epubFontPct(): Int = store.data.first()[EPUB_FONT_PCT] ?: 100
     suspend fun setEpubFontPct(pct: Int) = store.edit { it[EPUB_FONT_PCT] = pct }
+    /** `book`, `serif` or `sans`. */
+    suspend fun epubFont(): String = store.data.first()[EPUB_FONT] ?: "book"
+    suspend fun setEpubFont(name: String) = store.edit { it[EPUB_FONT] = name }
+    /** Line height as a percentage of the font size; 100 keeps the book's own. */
+    suspend fun epubLinePct(): Int = store.data.first()[EPUB_LINE_PCT] ?: 100
+    suspend fun setEpubLinePct(pct: Int) = store.edit { it[EPUB_LINE_PCT] = pct }
 
     /** One night-mode preference shared by the readers. */
     suspend fun readerNight(): Boolean = store.data.first()[READER_NIGHT] ?: false
@@ -159,6 +165,8 @@ class Settings @Inject constructor(private val context: Context) {
         val READER_NIGHT = booleanPreferencesKey("reader_night")
         val EPUB_THEME = stringPreferencesKey("epub_theme")
         val EPUB_FONT_PCT = intPreferencesKey("epub_font_pct")
+        val EPUB_FONT = stringPreferencesKey("epub_font")
+        val EPUB_LINE_PCT = intPreferencesKey("epub_line_pct")
         val SHAKE_TO_RESET = booleanPreferencesKey("shake_to_reset")
         val PENDING_SESSIONS = stringPreferencesKey("pending_sessions")
     }

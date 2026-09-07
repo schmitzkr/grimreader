@@ -103,7 +103,16 @@
         rendition = book.renderTo('viewer', {
           width: '100%', height: '100%', flow: 'paginated', spread: spreadFor(window.innerWidth), allowScriptedContent: false
         });
-        window.addEventListener('resize', function () { if (rendition) rendition.spread(spreadFor(window.innerWidth)); });
+        /* epub.js paginates against the container's size at renderTo() time and
+         * never re-measures on its own -- a WebView hosted in Compose doesn't
+         * always have its final on-screen size settled the instant this runs,
+         * so an explicit rendition.resize() (not just re-picking spread mode)
+         * is needed whenever the viewport actually changes size. */
+        window.addEventListener('resize', function () {
+          if (!rendition) return;
+          rendition.resize();
+          rendition.spread(spreadFor(window.innerWidth));
+        });
         Object.keys(themes).forEach(function (k) { rendition.themes.register(k, themes[k]); });
         this.setTheme(theme || 'light');
         this.setFontSize(fontPct || 100);
@@ -121,7 +130,14 @@
           if (lastLoc) relocated(lastLoc);
         }).catch(fail);
         var first = cfi ? rendition.display(cfi).catch(function () { return rendition.display(); }) : rendition.display();
-        first.catch(fail);
+        first.then(function () {
+          /* Belt-and-braces: force one resize right after the first display
+           * succeeds, in case the container's size at renderTo() time was
+           * stale/zero and no further resize event ever fires to correct
+           * it -- content can otherwise "load" (relocated still reports a
+           * real chapter/CFI) while rendering into an invisible area. */
+          if (rendition) rendition.resize();
+        }).catch(fail);
       } catch (e) {
         fail(e);
       }

@@ -136,10 +136,21 @@ class GrimmoryClient(
     fun authHeaders(): Map<String, String> =
         store.current()?.let { mapOf("Authorization" to "Bearer ${it.accessToken}") } ?: emptyMap()
 
-    fun coverUrl(bookId: Long, audiobook: Boolean, version: String?): String {
-        val path = if (audiobook) "audiobooks/$bookId/cover" else "media/book/$bookId/thumbnail"
-        return if (version == null) "$apiBase$path" else "$apiBase$path?v=$version"
-    }
+    /**
+     * `BookMediaController`: an audiobook's art lives at `audiobook-cover`
+     * and may not exist, in which case the book's `cover` is the fallback
+     * (see [fallbackCoverUrl]). [version] busts the image cache after a
+     * cover is regenerated.
+     */
+    fun coverUrl(bookId: Long, audiobook: Boolean, version: String?): String =
+        versioned("${apiBase}media/book/$bookId/${if (audiobook) "audiobook-cover" else "cover"}", version)
+
+    /** The plain book cover, for an audiobook whose own art request failed. */
+    fun fallbackCoverUrl(bookId: Long, version: String?): String =
+        versioned("${apiBase}media/book/$bookId/cover", version)
+
+    private fun versioned(url: String, version: String?): String =
+        if (version == null) url else "$url?v=${java.net.URLEncoder.encode(version, "UTF-8")}"
 
     fun authorPhotoUrl(authorId: Long): String = "${apiBase}media/author/$authorId/photo"
 

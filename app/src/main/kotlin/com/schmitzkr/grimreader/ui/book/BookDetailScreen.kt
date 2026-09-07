@@ -80,6 +80,7 @@ class BookDetailViewModel @Inject constructor(
     }
 
     fun coverUrl(book: Book) = books.coverUrl(book)
+    fun fallbackCoverUrl(book: Book) = if (book.isAudiobook) books.fallbackCoverUrl(book) else null
 
     fun load(quiet: Boolean = false) {
         viewModelScope.launch {
@@ -136,6 +137,7 @@ fun BookDetailScreen(
                         modifier = Modifier.width(if (book.isAudiobook) 220.dp else 180.dp),
                         cornerRadius = 16,
                         showProgress = false,
+                        fallbackUrl = vm.fallbackCoverUrl(book),
                         downloaded = downloadStates[book.id]?.isDone == true,
                     )
                     Spacer(Modifier.height(20.dp))

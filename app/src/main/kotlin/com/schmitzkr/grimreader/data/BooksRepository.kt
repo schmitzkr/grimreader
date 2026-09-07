@@ -230,6 +230,7 @@ class BooksRepository @Inject constructor(
 
     fun coverUrl(book: Book): String = client().coverUrl(book.id, book.isAudiobook, book.coverVersion)
     fun coverUrl(bookId: Long, audiobook: Boolean): String = client().coverUrl(bookId, audiobook, null)
+    fun fallbackCoverUrl(book: Book): String = client().fallbackCoverUrl(book.id, book.coverVersion)
     fun streamUrl(bookId: Long): String = client().streamUrl(bookId)
     fun trackStreamUrl(bookId: Long, index: Int): String = client().trackStreamUrl(bookId, index)
 

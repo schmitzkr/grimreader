@@ -2,6 +2,9 @@ package com.schmitzkr.grimreader.data
 
 import com.schmitzkr.grimreader.core.api.GrimmoryClient
 import com.schmitzkr.grimreader.core.api.audiobookProgressBody
+import com.schmitzkr.grimreader.core.api.epubProgressBody
+import com.schmitzkr.grimreader.core.api.parseEpubProgress
+import com.schmitzkr.grimreader.core.model.EpubProgress
 import com.schmitzkr.grimreader.core.api.bookmarkBody
 import com.schmitzkr.grimreader.core.api.inProgressOrder
 import com.schmitzkr.grimreader.core.api.pageProgressBody
@@ -23,7 +26,10 @@ import com.schmitzkr.grimreader.core.model.Library
 import com.schmitzkr.grimreader.core.model.MagicShelf
 import com.schmitzkr.grimreader.core.model.Series
 import com.schmitzkr.grimreader.core.model.Shelf
+import com.schmitzkr.grimreader.core.api.resolveProgress
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import java.io.IOException
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -36,7 +42,10 @@ import javax.inject.Singleton
 val READABLE_FILE_TYPES = listOf("EPUB", "PDF", "CBX", "FB2", "MOBI", "AZW3")
 
 @Singleton
-class BooksRepository @Inject constructor(private val clients: ClientHolder) {
+class BooksRepository @Inject constructor(
+    private val clients: ClientHolder,
+    private val progressStore: ProgressStore,
+) {
     private fun client(): GrimmoryClient = clients.current()
     private val api get() = client().api
 
@@ -146,17 +155,50 @@ class BooksRepository @Inject constructor(private val clients: ClientHolder) {
 
     suspend fun audiobookInfo(bookId: Long): AudiobookInfo = api.audiobookInfo(bookId)
 
-    // ── Page readers (comics and PDFs) ────────────────────────────────────
+    // ── EPUB ──────────────────────────────────────────────────────────────
 
-    suspend fun pageProgress(bookId: Long, format: PageFormat): PageProgress? {
-        val response = api.progress(bookId)
-        if (response.code() == 404) return null
-        if (!response.isSuccessful) throw HttpException(response)
-        return response.body()?.let { parsePageProgress(it, format, client().json) }
+    suspend fun epubProgress(bookId: Long): EpubProgress? =
+        loadProgress(KIND_EPUB, bookId)?.let { parseEpubProgress(it, client().json) }
+
+    suspend fun saveEpubProgress(bookId: Long, progress: EpubProgress, bookFileId: Long?) {
+        progressStore.save(KIND_EPUB, bookId, epubProgressBody(progress, bookFileId, client().json))
     }
 
+    suspend fun addEpubBookmark(bookId: Long, title: String?, cfi: String): Bookmark =
+        api.createBookmark(bookmarkBody(bookId, title, cfi = cfi))
+
+    // ── Page readers (comics and PDFs) ────────────────────────────────────
+
+    suspend fun pageProgress(bookId: Long, format: PageFormat): PageProgress? =
+        loadProgress(format.name.lowercase(), bookId)?.let { parsePageProgress(it, format, client().json) }
+
+    /** Lands locally first; a server failure leaves it pending for retry rather than failing the caller. */
     suspend fun savePageProgress(bookId: Long, progress: PageProgress, format: PageFormat, bookFileId: Long?) {
-        api.updateProgress(bookId, pageProgressBody(progress, format, bookFileId, client().json))
+        progressStore.save(format.name.lowercase(), bookId, pageProgressBody(progress, format, bookFileId, client().json))
+    }
+
+    /**
+     * The position to open at: a pending local save first, else the server's
+     * copy (remembered for next time), else the local copy when offline.
+     * Every load also nudges the pending queue.
+     */
+    private suspend fun loadProgress(kind: String, bookId: Long): JsonObject? {
+        val local = progressStore.get(kind, bookId)
+        progressStore.retryPendingLater()
+        if (local?.pending == true) return local.body
+        val server: JsonObject? = try {
+            val response = api.progress(bookId)
+            when {
+                response.code() == 404 -> null
+                response.isSuccessful -> response.body()?.also { progressStore.remember(kind, bookId, it) }
+                else -> throw HttpException(response)
+            }
+        } catch (e: HttpException) {
+            if (local == null) throw e else null
+        } catch (e: IOException) {
+            if (local == null) throw e else null
+        }
+        return resolveProgress(local, server)
     }
 
     /** The page numbers the server can render for a comic, in reading order. */
@@ -178,19 +220,21 @@ class BooksRepository @Inject constructor(private val clients: ClientHolder) {
         if (!temp.renameTo(target)) error("Could not move the downloaded file into place")
     }
 
-    suspend fun audiobookProgress(bookId: Long): AudiobookProgress? {
-        val response = api.progress(bookId)
-        if (response.code() == 404) return null
-        if (!response.isSuccessful) throw HttpException(response)
-        return response.body()?.let { parseAudiobookProgress(it, client().json) }
-    }
+    suspend fun audiobookProgress(bookId: Long): AudiobookProgress? =
+        loadProgress(KIND_AUDIOBOOK, bookId)?.let { parseAudiobookProgress(it, client().json) }
 
+    /** Lands locally first; a server failure leaves it pending for retry rather than failing the caller. */
     suspend fun saveAudiobookProgress(bookId: Long, progress: AudiobookProgress, bookFileId: Long?) {
-        api.updateProgress(bookId, audiobookProgressBody(progress, bookFileId, client().json))
+        progressStore.save(KIND_AUDIOBOOK, bookId, audiobookProgressBody(progress, bookFileId, client().json))
     }
 
     fun coverUrl(book: Book): String = client().coverUrl(book.id, book.isAudiobook, book.coverVersion)
     fun coverUrl(bookId: Long, audiobook: Boolean): String = client().coverUrl(bookId, audiobook, null)
     fun streamUrl(bookId: Long): String = client().streamUrl(bookId)
     fun trackStreamUrl(bookId: Long, index: Int): String = client().trackStreamUrl(bookId, index)
+
+    companion object {
+        const val KIND_AUDIOBOOK = "audiobook"
+        const val KIND_EPUB = "epub"
+    }
 }

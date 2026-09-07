@@ -24,18 +24,30 @@ digital library server. Kotlin and Jetpack Compose.
   chapters, speed (remembered per book), sleep timer with fade-out,
   auto-rewind after a pause, notification and lock-screen controls,
   Android Auto browsing
+- EPUB reader: chapters, bookmarks, light, sepia and dark pages, text size,
+  swipe or tap to turn, progress saved as the same CFI and percentage the
+  web reader uses so both open at the same place
 - Comic (CBX) and PDF readers: pinch to zoom, double-tap, page slider,
   right-to-left reading for manga, night mode for PDFs, progress saved to
   the server so the web reader opens on the same page
+- Download an audiobook for offline listening: it plays from the device
+  with no network, a Downloaded pill filters each library, and Settings →
+  Downloads lists what is on the device with sizes and removal
+- Positions saved on the device first and pushed to the server, so a lost
+  connection never loses your place; pending saves retry on their own
+- Reading and listening sessions recorded for the server's stats pages,
+  queued on the device when offline
+- Your stats in Settings: this week's listening and reading, streaks with a
+  past-year grid, last seven days of listening, audiobooks in progress
+- Shake to reset a running sleep timer; libraries remember their sort and
+  filter pills
 - Floating mini player and navigation bar, neutral theme with a choice of
   accent, pure-black option for OLED screens
 
 ## Coming next
 
-In rough order: SSO sign-in, the EPUB reader, downloads and
-offline playback, dashboard rows from the server's layout, series, authors
-and shelves, search, bookmarks, in-app updates, reading-session recording
-and the stats screen. Each has an issue in the tracker.
+In rough order: SSO sign-in, dashboard rows from the server's layout,
+series, authors and shelves, search, bookmarks and in-app updates. Each has an issue in the tracker.
 
 ## Building
 

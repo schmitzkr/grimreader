@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -70,6 +71,7 @@ fun BookCover(
     modifier: Modifier = Modifier,
     cornerRadius: Int = 12,
     showProgress: Boolean = true,
+    downloaded: Boolean = false,
 ) {
     val shape = RoundedCornerShape(cornerRadius.dp)
     Box(
@@ -84,6 +86,16 @@ fun BookCover(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
+        if (downloaded) Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(6.dp)
+                .size(22.dp)
+                .background(Color.Black.copy(alpha = 0.55f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.DownloadDone, "Downloaded", tint = Color.White, modifier = Modifier.size(14.dp))
+        }
         if (!showProgress) return@Box
         val progress = book.normalizedReadProgress
         when {
@@ -117,9 +129,10 @@ fun BookTile(
     coverUrl: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    downloaded: Boolean = false,
 ) {
     Column(modifier.clickable(onClick = onClick)) {
-        BookCover(book, coverUrl, Modifier.fillMaxWidth())
+        BookCover(book, coverUrl, Modifier.fillMaxWidth(), downloaded = downloaded)
         Spacer(Modifier.height(6.dp))
         Text(
             book.title,
@@ -148,6 +161,7 @@ fun BookGrid(
     onOpen: (Long) -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp),
+    downloadedIds: Set<Long> = emptySet(),
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 120.dp),
@@ -157,7 +171,7 @@ fun BookGrid(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         items(books, key = { it.id }) { book ->
-            BookTile(book, coverUrl(book), onClick = { onOpen(book.id) })
+            BookTile(book, coverUrl(book), onClick = { onOpen(book.id) }, downloaded = book.id in downloadedIds)
         }
     }
 }

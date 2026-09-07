@@ -54,13 +54,17 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.schmitzkr.grimreader.core.model.Book
 import com.schmitzkr.grimreader.core.model.PageFormat
 import com.schmitzkr.grimreader.data.BooksRepository
+import com.schmitzkr.grimreader.data.SessionKind
+import com.schmitzkr.grimreader.data.SessionRepository
 import com.schmitzkr.grimreader.data.Settings
 import com.schmitzkr.grimreader.ui.components.ErrorState
 import com.schmitzkr.grimreader.ui.components.LoadingState
@@ -104,6 +108,7 @@ data class ReaderUiState(
 class PageReaderViewModel @Inject constructor(
     private val books: BooksRepository,
     private val settings: Settings,
+    private val sessions: SessionRepository,
     private val context: android.content.Context,
 ) : ViewModel() {
     val state = MutableStateFlow(ReaderUiState())
@@ -157,6 +162,7 @@ class PageReaderViewModel @Inject constructor(
             state.update {
                 it.copy(loading = false, title = book.title, source = source, initialIndex = initial, index = initial, rtl = rtl, night = night)
             }
+            foreground()
         }.onFailure { e -> state.update { it.copy(loading = false, error = friendlyError(e)) } }
     }
 
@@ -170,6 +176,22 @@ class PageReaderViewModel @Inject constructor(
     fun pageChanged(index: Int) {
         state.update { it.copy(index = index) }
         saver?.pageChanged(index)
+    }
+
+    // ── Reading sessions: the screen is visible, or it is not ─────────────
+
+    /** Starts a session for the page on screen; a no-op before the book is loaded or while one runs. */
+    fun foreground() {
+        val s = saver ?: return
+        if (sessions.current(SessionKind.READER)?.bookId == bookId) return
+        val p = s.progressAt(state.value.index)
+        sessions.begin(SessionKind.READER, bookId, format.bookType, p.percentage, p.page.toString())
+    }
+
+    fun background() {
+        val s = saver ?: return
+        val p = s.progressAt(state.value.index)
+        sessions.end(SessionKind.READER, p.percentage, p.page.toString())
     }
 
     fun toggleRtl() = viewModelScope.launch {
@@ -193,6 +215,7 @@ class PageReaderViewModel @Inject constructor(
         viewModelScope.launch {
             val s = saver
             if (s != null && (state.value.source?.count ?: 0) > 0) s.saveNow(state.value.index)
+            background()
             books.notifyProgressChanged(bookId)
             then()
         }
@@ -217,6 +240,9 @@ fun PageReaderScreen(
     val view = LocalView.current
     val exit = { vm.exit(onBack) }
     BackHandler { exit() }
+    // Reader sessions only count while the screen is in front.
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.foreground() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.background() }
 
     // Immersive while the chrome is hidden; restored on leave.
     LaunchedEffect(chrome) {

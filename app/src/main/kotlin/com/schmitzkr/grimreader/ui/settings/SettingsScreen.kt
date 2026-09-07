@@ -44,6 +44,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.schmitzkr.grimreader.BuildConfig
 import com.schmitzkr.grimreader.data.AuthRepository
+import com.schmitzkr.grimreader.data.DownloadManager
+import com.schmitzkr.grimreader.ui.formatBytes
 import com.schmitzkr.grimreader.data.Settings
 import com.schmitzkr.grimreader.data.ThemeMode
 import com.schmitzkr.grimreader.data.UpdateRepository
@@ -67,7 +69,9 @@ class SettingsViewModel @Inject constructor(
     private val auth: AuthRepository,
     private val settings: Settings,
     private val updates: UpdateRepository,
+    downloads: DownloadManager,
 ) : ViewModel() {
+    val downloadStates = downloads.state
     val user = auth.currentUser
     val latestRelease = updates.latest
     val updateState = updates.state
@@ -81,24 +85,27 @@ class SettingsViewModel @Inject constructor(
     val accent = settings.accent.stateIn(viewModelScope, SharingStarted.Eagerly, "violet")
     val oledBlack = settings.oledBlack.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val autoRewind = settings.autoRewind.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val shakeToReset = settings.shakeToReset.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { settings.setThemeMode(mode) }
     fun setAccent(accent: Accent) = viewModelScope.launch { settings.setAccent(accent.name.lowercase()) }
     fun setOledBlack(on: Boolean) = viewModelScope.launch { settings.setOledBlack(on) }
     fun setAutoRewind(on: Boolean) = viewModelScope.launch { settings.setAutoRewind(on) }
+    fun setShakeToReset(on: Boolean) = viewModelScope.launch { settings.setShakeToReset(on) }
     fun signOut() = viewModelScope.launch { auth.signOut() }
     fun changeServer() = viewModelScope.launch { auth.changeServer() }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
     val user by vm.user.collectAsStateWithLifecycle()
     val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
     val accent by vm.accent.collectAsStateWithLifecycle()
     val oled by vm.oledBlack.collectAsStateWithLifecycle()
     val autoRewind by vm.autoRewind.collectAsStateWithLifecycle()
+    val shakeToReset by vm.shakeToReset.collectAsStateWithLifecycle()
     var confirm by remember { mutableStateOf<String?>(null) }
     var whatsNew by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.ensureLatestKnown() }
@@ -123,6 +130,8 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                     )
                     HorizontalDivider()
                     Item(title = "Server", subtitle = serverUrl ?: "Not set")
+                    HorizontalDivider()
+                    Item("Your stats", "Streaks, this week's listening and reading, books in progress", onOpenStats)
                 }
             }
         }
@@ -162,6 +171,20 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
             }
         }
 
+        item { SectionLabel("Storage", Modifier.padding(0.dp)) }
+        item {
+            val downloads by vm.downloadStates.collectAsStateWithLifecycle()
+            val done = downloads.values.filter { it.isDone }
+            GrimCard(Modifier.fillMaxWidth()) {
+                Item(
+                    "Downloads",
+                    if (done.isEmpty()) "Nothing on this device yet"
+                    else "${done.size} audiobook${if (done.size == 1) "" else "s"} · ${formatBytes(done.sumOf { it.bytes })}",
+                    onOpenDownloads,
+                )
+            }
+        }
+
         item { SectionLabel("Listening", Modifier.padding(0.dp)) }
         item {
             GrimCard(Modifier.fillMaxWidth()) {
@@ -170,6 +193,12 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                         "Auto-rewind after a pause",
                         "Back up a few seconds on resume, more after a long pause",
                         autoRewind, vm::setAutoRewind,
+                    )
+                    HorizontalDivider()
+                    ToggleRow(
+                        "Shake to reset the sleep timer",
+                        "A firm shake restarts a running timer at the same length",
+                        shakeToReset, vm::setShakeToReset,
                     )
                 }
             }

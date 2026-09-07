@@ -21,7 +21,8 @@ digital library server. Kotlin and Jetpack Compose.
 - Book detail with progress and mark finished
 - Audiobook playback: single-file and folder-based books, resume from the
   server's saved position, 30-second skips that cross track boundaries,
-  chapters, speed (remembered per book), sleep timer with fade-out,
+  chapters, speed (remembered per book), sleep timer with fade-out and an
+  end-of-chapter option,
   auto-rewind after a pause, notification and lock-screen controls,
   Android Auto browsing
 - Every file type the server stores has a path: FB2 is converted on the

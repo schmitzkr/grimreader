@@ -10,7 +10,9 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import com.schmitzkr.grimreader.core.model.AudiobookChapter
 import com.schmitzkr.grimreader.core.model.AudiobookInfo
+import com.schmitzkr.grimreader.core.playback.chapterEndMs
 import com.schmitzkr.grimreader.core.playback.skipTarget
+import com.schmitzkr.grimreader.core.playback.wallClockUntil
 import com.schmitzkr.grimreader.data.BooksRepository
 import com.schmitzkr.grimreader.data.Settings
 import kotlinx.coroutines.flow.first
@@ -45,6 +47,8 @@ data class PlaybackState(
     val speed: Float = 1f,
     val chapters: List<AudiobookChapter> = emptyList(),
     val sleepRemainingMs: Long? = null,
+    /** The running sleep timer ends at the current chapter's end rather than after a fixed length. */
+    val sleepAtChapterEnd: Boolean = false,
 ) {
     val hasBook: Boolean get() = bookId != null
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
@@ -69,6 +73,7 @@ class PlayerController @Inject constructor(
     private var positionJob: Job? = null
     private var sleepJob: Job? = null
     private var sleepLengthMs = 0L
+    private var sleepChapterMode = false
     private var shake: ShakeDetector? = null
     private var info: AudiobookInfo? = null
 
@@ -157,14 +162,35 @@ class PlayerController @Inject constructor(
 
     /** Counts down, fades the last five seconds, then pauses. A shake restarts it at the same length. */
     fun startSleepTimer(durationMs: Long) {
+        sleepChapterMode = false
+        runSleep(durationMs)
+    }
+
+    /**
+     * Sleeps at the end of the chapter now playing (the track for a
+     * folder-based book without chapters, else the book's end), in content
+     * time at the current speed. A shake re-targets the chapter playing then.
+     */
+    fun startSleepAtChapterEnd(): Boolean {
+        val s = _state.value
+        val end = chapterEndMs(s.positionMs, s.chapters, info?.tracks ?: emptyList(), s.durationMs) ?: return false
+        val wall = wallClockUntil(s.positionMs, end, s.speed)
+        if (wall <= 0) return false
+        sleepChapterMode = true
+        runSleep(wall)
+        return true
+    }
+
+    private fun runSleep(durationMs: Long) {
         sleepJob?.cancel()
         sleepLengthMs = durationMs
         controller?.volume = 1f
         val forBook = _state.value.bookId
+        val chapterMode = sleepChapterMode
         sleepJob = scope.launch {
             listenForShake()
             var remaining = durationMs
-            _state.update { it.copy(sleepRemainingMs = remaining) }
+            _state.update { it.copy(sleepRemainingMs = remaining, sleepAtChapterEnd = chapterMode) }
             while (remaining > 0 && isActive) {
                 delay(1_000)
                 remaining -= 1_000
@@ -178,7 +204,8 @@ class PlayerController @Inject constructor(
                 controller?.pause()
                 controller?.volume = 1f
                 stopListeningForShake()
-                _state.update { it.copy(sleepRemainingMs = null) }
+                sleepChapterMode = false
+                _state.update { it.copy(sleepRemainingMs = null, sleepAtChapterEnd = false) }
             }
         }
     }
@@ -188,7 +215,8 @@ class PlayerController @Inject constructor(
         sleepJob = null
         stopListeningForShake()
         controller?.volume = 1f
-        _state.update { it.copy(sleepRemainingMs = null) }
+        sleepChapterMode = false
+        _state.update { it.copy(sleepRemainingMs = null, sleepAtChapterEnd = false) }
     }
 
     /** The accelerometer only runs while a timer does, and only if the setting is on. */
@@ -196,7 +224,8 @@ class PlayerController @Inject constructor(
         if (shake != null) return
         if (!settings.shakeToReset.first()) return
         val detector = ShakeDetector(context) {
-            if (_state.value.sleepRemainingMs != null && sleepLengthMs > 0) startSleepTimer(sleepLengthMs)
+            if (_state.value.sleepRemainingMs == null) return@ShakeDetector
+            if (sleepChapterMode) startSleepAtChapterEnd() else if (sleepLengthMs > 0) startSleepTimer(sleepLengthMs)
         }
         if (detector.start()) shake = detector
     }

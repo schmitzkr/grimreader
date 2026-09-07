@@ -16,8 +16,13 @@ fun chapterEndMs(
     totalDurationMs: Long,
 ): Long? {
     if (totalDurationMs <= 0) return null
-    val nextChapter = chapters.map { it.startTimeMs }.filter { it > positionMs }.minOrNull()
-    if (chapters.isNotEmpty()) return (nextChapter ?: totalDurationMs).coerceAtMost(totalDurationMs)
+    if (chapters.isNotEmpty()) {
+        // The current chapter's own end when the server gave one, else the next chapter's start.
+        val current = chapters.lastOrNull { it.startTimeMs <= positionMs }
+        if (current != null && current.endTimeMs > positionMs) return current.endTimeMs.coerceAtMost(totalDurationMs)
+        val nextChapter = chapters.map { it.startTimeMs }.filter { it > positionMs }.minOrNull()
+        return (nextChapter ?: totalDurationMs).coerceAtMost(totalDurationMs)
+    }
     val track = tracks.lastOrNull { it.cumulativeStartMs <= positionMs }
     if (track != null) return (track.cumulativeStartMs + track.durationMs).coerceAtMost(totalDurationMs)
     return totalDurationMs

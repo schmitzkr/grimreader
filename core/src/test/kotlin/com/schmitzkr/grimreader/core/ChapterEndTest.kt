@@ -10,9 +10,9 @@ import org.junit.Test
 
 class ChapterEndTest {
     private val chapters = listOf(
-        AudiobookChapter(0, "One", 0),
-        AudiobookChapter(1, "Two", 60_000),
-        AudiobookChapter(2, "Three", 120_000),
+        AudiobookChapter(0, "One", 0, 60_000, 60_000),
+        AudiobookChapter(1, "Two", 60_000, 120_000, 60_000),
+        AudiobookChapter(2, "Three", 120_000, 180_000, 60_000),
     )
     private val tracks = listOf(
         AudiobookTrack(0, "a.mp3", "A", 50_000, 0),

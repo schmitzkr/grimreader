@@ -7,6 +7,17 @@
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #ffffff; }
   #viewer { position: absolute; top: 0; right: 0; bottom: 0; left: 0; }
 </style>
+<script>
+  // Last-resort net: anything that slips past reader.js's own try/catch
+  // (a script failing to parse, an error inside an event listener) would
+  // otherwise leave a permanently blank page with no trace anywhere.
+  window.onerror = function (message, source, lineno) {
+    if (window.Android && window.Android.onError) {
+      window.Android.onError('window.onerror: ' + message + ' @ ' + source + ':' + lineno);
+    }
+    return false;
+  };
+</script>
 <script src="jszip.min.js"></script>
 <script src="epub.min.js"></script>
 <script src="reader.js"></script>

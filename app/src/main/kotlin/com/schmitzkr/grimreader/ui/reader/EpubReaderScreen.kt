@@ -334,6 +334,17 @@ class EpubReaderViewModel @Inject constructor(
     }
 }
 
+/**
+ * Wraps a JS statement injected via `evaluateJavascript` so a call-site
+ * error (e.g. `reader` not being defined yet, if a reader asset failed to
+ * load) reports through the same `Android.onError` channel a failure
+ * inside a `reader.*` function body uses -- otherwise it just vanishes
+ * into the discarded result callback, since `evaluateJavascript` doesn't
+ * surface exceptions any other way.
+ */
+private fun guardedEval(js: String): String =
+    "try { $js } catch (e) { window.Android && window.Android.onError('eval: ' + ((e && e.message) || e)); }"
+
 /** The page's window.Android. Calls arrive on the WebView's JS thread. */
 private class ReaderBridge(private val vm: EpubReaderViewModel, private val tapped: () -> Unit) {
     @JavascriptInterface fun onRelocated(cfi: String, percentage: Double, chapter: String, atEnd: Boolean) = vm.relocated(cfi, percentage, chapter)
@@ -416,13 +427,13 @@ fun EpubReaderScreen(
         if (!pageLoaded) return@LaunchedEffect
         val cfi = state.initialCfi?.let { JSONObject.quote(it) } ?: "null"
         webView?.evaluateJavascript(
-            "reader.open(${JSONObject.quote(url)}, $cfi, ${JSONObject.quote(state.theme)}, ${state.fontPct}, ${JSONObject.quote(state.font)}, ${state.linePct})",
+            guardedEval("reader.open(${JSONObject.quote(url)}, $cfi, ${JSONObject.quote(state.theme)}, ${state.fontPct}, ${JSONObject.quote(state.font)}, ${state.linePct})"),
             null,
         )
     }
     LaunchedEffect(webView) {
         val w = webView ?: return@LaunchedEffect
-        vm.commands.collect { w.evaluateJavascript(it, null) }
+        vm.commands.collect { w.evaluateJavascript(guardedEval(it), null) }
     }
 
     val pageBackground = readerThemeOptions.firstOrNull { it.key == state.theme }?.background ?: Color.White

@@ -3,7 +3,10 @@ package com.schmitzkr.grimreader.ui.reader
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.util.Log
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -13,8 +16,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,16 +29,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
@@ -61,6 +69,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -333,6 +342,39 @@ private class ReaderBridge(private val vm: EpubReaderViewModel, private val tapp
     @JavascriptInterface fun onTap() = tapped()
 }
 
+/**
+ * [WebViewAssetLoader.InternalStoragePathHandler] resolves content type via
+ * [android.webkit.MimeTypeMap], which has no built-in mapping for `epub`/
+ * `fb2`; this wraps it to fix those up while keeping its (already
+ * path-traversal-safe) file resolution.
+ */
+private class MimeCorrectingPathHandler(
+    private val delegate: WebViewAssetLoader.PathHandler,
+    private val overrides: Map<String, String>,
+) : WebViewAssetLoader.PathHandler {
+    override fun handle(path: String): WebResourceResponse? {
+        val response = delegate.handle(path) ?: return null
+        overrides[path.substringAfterLast('.', "").lowercase()]?.let { response.mimeType = it }
+        return response
+    }
+}
+
+private val readerMimeOverrides = mapOf(
+    "epub" to "application/epub+zip",
+    "fb2" to "application/x-fictionbook+xml",
+)
+
+/** The reading-area colors a book can be shown in; matches `reader.js`'s `themes` map. */
+private data class ReaderThemeOption(val key: String, val label: String, val background: Color, val onBackground: Color)
+
+private val readerThemeOptions = listOf(
+    ReaderThemeOption("light", "Light", Color(0xFFFFFFFF), Color(0xFF1B1B1F)),
+    ReaderThemeOption("sepia", "Sepia", Color(0xFFF4ECD8), Color(0xFF3B2F22)),
+    ReaderThemeOption("dark", "Dark", Color(0xFF121212), Color(0xFFD6D6D6)),
+    ReaderThemeOption("black", "Black", Color(0xFF000000), Color(0xFFCFCFCF)),
+    ReaderThemeOption("forest", "Forest", Color(0xFF1B2A1E), Color(0xFFDBE8DB)),
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -383,11 +425,7 @@ fun EpubReaderScreen(
         vm.commands.collect { w.evaluateJavascript(it, null) }
     }
 
-    val pageBackground = when (state.theme) {
-        "dark" -> Color(0xFF121212)
-        "sepia" -> Color(0xFFF4ECD8)
-        else -> Color.White
-    }
+    val pageBackground = readerThemeOptions.firstOrNull { it.key == state.theme }?.background ?: Color.White
     Box(Modifier.fillMaxSize().background(pageBackground)) {
         when {
             state.loading -> LoadingState()
@@ -398,8 +436,14 @@ fun EpubReaderScreen(
                     val loader = WebViewAssetLoader.Builder()
                         .setDomain("appassets.androidplatform.net")
                         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
-                        .addPathHandler("/books/", WebViewAssetLoader.InternalStoragePathHandler(ctx, File(ctx.cacheDir, "books")))
-                        .addPathHandler("/downloads/", WebViewAssetLoader.InternalStoragePathHandler(ctx, File(ctx.filesDir, "downloads")))
+                        .addPathHandler(
+                            "/books/",
+                            MimeCorrectingPathHandler(WebViewAssetLoader.InternalStoragePathHandler(ctx, File(ctx.cacheDir, "books")), readerMimeOverrides),
+                        )
+                        .addPathHandler(
+                            "/downloads/",
+                            MimeCorrectingPathHandler(WebViewAssetLoader.InternalStoragePathHandler(ctx, File(ctx.filesDir, "downloads")), readerMimeOverrides),
+                        )
                         .build()
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
@@ -412,6 +456,14 @@ fun EpubReaderScreen(
                             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                                 loader.shouldInterceptRequest(request.url)
                             override fun onPageFinished(view: WebView, url: String?) { pageLoaded = true }
+                        }
+                        // epub.js/JSZip errors and any other page console output are otherwise
+                        // invisible: a book that fails to render leaves no trace anywhere.
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                                Log.d("EpubReader", "console: ${message.message()} (${message.sourceId()}:${message.lineNumber()})")
+                                return true
+                            }
                         }
                         loadUrl(EpubReaderViewModel.PAGE)
                         webView = this
@@ -510,14 +562,32 @@ fun EpubReaderScreen(
         "display" -> ModalBottomSheet(onDismissRequest = { sheet = null }) {
             Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
                 Text("Display", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp))
-                val themes = listOf("light" to "Light", "sepia" to "Sepia", "dark" to "Dark")
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    themes.forEachIndexed { i, (key, label) ->
-                        SegmentedButton(
-                            selected = state.theme == key,
-                            onClick = { vm.setTheme(key) },
-                            shape = SegmentedButtonDefaults.itemShape(i, themes.size),
-                        ) { Text(label) }
+                Text("Theme", style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    readerThemeOptions.forEach { option ->
+                        val selected = state.theme == option.key
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable { vm.setTheme(option.key) }.padding(4.dp),
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(option.background)
+                                    .border(
+                                        width = if (selected) 2.dp else 1.dp,
+                                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                        shape = CircleShape,
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (selected) Icon(Icons.Rounded.Check, null, tint = option.onBackground, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(option.label, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
                 Spacer(Modifier.height(16.dp))

@@ -14,7 +14,9 @@
   var themes = {
     light: { body: { background: '#ffffff', color: '#1b1b1f' }, a: { color: '#5b4bcf' } },
     sepia: { body: { background: '#f4ecd8', color: '#3b2f22' }, a: { color: '#7a5230' } },
-    dark: { body: { background: '#121212', color: '#d6d6d6' }, a: { color: '#b0a4ff' } }
+    dark: { body: { background: '#121212', color: '#d6d6d6' }, a: { color: '#b0a4ff' } },
+    black: { body: { background: '#000000', color: '#cfcfcf' }, a: { color: '#a89bff' } },
+    forest: { body: { background: '#1b2a1e', color: '#dbe8db' }, a: { color: '#8fd19e' } }
   };
 
   function report(name) {
@@ -92,29 +94,37 @@
 
   window.reader = {
     open: function (url, cfi, theme, fontPct, font, linePct) {
-      book = ePub(url);
-      rendition = book.renderTo('viewer', {
-        width: '100%', height: '100%', flow: 'paginated', spread: spreadFor(window.innerWidth), allowScriptedContent: false
-      });
-      window.addEventListener('resize', function () { if (rendition) rendition.spread(spreadFor(window.innerWidth)); });
-      Object.keys(themes).forEach(function (k) { rendition.themes.register(k, themes[k]); });
-      this.setTheme(theme || 'light');
-      this.setFontSize(fontPct || 100);
-      this.setFont(font || 'book');
-      this.setLineHeight(linePct || 100);
-      rendition.on('relocated', relocated);
-      rendition.hooks.content.register(attachGestures);
-      book.ready.then(function () {
-        spineCount = (book.spine && book.spine.spineItems && book.spine.spineItems.length) || 1;
-        toc = flatten(book.navigation && book.navigation.toc, 0, []);
-        report('onReady', JSON.stringify(toc));
-        return book.locations.generate(1024);
-      }).then(function () {
-        locationsReady = true;
-        if (lastLoc) relocated(lastLoc);
-      }).catch(fail);
-      var first = cfi ? rendition.display(cfi).catch(function () { return rendition.display(); }) : rendition.display();
-      first.catch(fail);
+      /* Everything up to the two promise chains below runs synchronously; an
+       * exception anywhere in here used to abort open() with nothing ever
+       * reported to Android (onReady/onError are both wired up inside this
+       * same call), leaving a permanently blank #viewer and no diagnostic. */
+      try {
+        book = ePub(url);
+        rendition = book.renderTo('viewer', {
+          width: '100%', height: '100%', flow: 'paginated', spread: spreadFor(window.innerWidth), allowScriptedContent: false
+        });
+        window.addEventListener('resize', function () { if (rendition) rendition.spread(spreadFor(window.innerWidth)); });
+        Object.keys(themes).forEach(function (k) { rendition.themes.register(k, themes[k]); });
+        this.setTheme(theme || 'light');
+        this.setFontSize(fontPct || 100);
+        this.setFont(font || 'book');
+        this.setLineHeight(linePct || 100);
+        rendition.on('relocated', relocated);
+        rendition.hooks.content.register(attachGestures);
+        book.ready.then(function () {
+          spineCount = (book.spine && book.spine.spineItems && book.spine.spineItems.length) || 1;
+          toc = flatten(book.navigation && book.navigation.toc, 0, []);
+          report('onReady', JSON.stringify(toc));
+          return book.locations.generate(1024);
+        }).then(function () {
+          locationsReady = true;
+          if (lastLoc) relocated(lastLoc);
+        }).catch(fail);
+        var first = cfi ? rendition.display(cfi).catch(function () { return rendition.display(); }) : rendition.display();
+        first.catch(fail);
+      } catch (e) {
+        fail(e);
+      }
     },
     next: function () { if (rendition) rendition.next(); },
     prev: function () { if (rendition) rendition.prev(); },

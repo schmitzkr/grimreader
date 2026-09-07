@@ -17,3 +17,9 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
+
+# The EPUB reader's WebView calls these from JS by (reflection-visible) name;
+# a minified release build can otherwise rename or strip them silently.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

@@ -216,6 +216,9 @@ private fun MainShell(vm: RootViewModel) {
                 )
             }
             composable(Routes.PLAYER) { PlayerScreen(onBack = { nav.popBackStack() }) }
+            composable(Routes.EPUB, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+                EpubReaderScreen(bookId = entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
+            }
             composable(
                 Routes.EPUB,
                 arguments = listOf(

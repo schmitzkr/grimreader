@@ -31,6 +31,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import java.io.IOException
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -61,6 +65,23 @@ class BooksRepository @Inject constructor(
     }
 
     suspend fun libraries(): List<Library> = api.libraries()
+
+    /**
+     * Libraries with a real book count. The server's list endpoint leaves
+     * `bookCount` at zero, so each library missing one is counted through
+     * the paged books endpoint (one page of one, only the total is read),
+     * all in parallel. A count that fails stays at zero rather than
+     * failing the list.
+     */
+    suspend fun librariesWithCounts(): List<Library> = coroutineScope {
+        libraries().map { library ->
+            if (library.bookCount > 0) CompletableDeferred(library)
+            else async {
+                val total = runCatching { api.books(libraryId = library.id, page = 0, size = 1).totalElements }.getOrDefault(0L)
+                library.copy(bookCount = total.toInt())
+            }
+        }.awaitAll()
+    }
 
     suspend fun libraryBooks(
         libraryId: Long,

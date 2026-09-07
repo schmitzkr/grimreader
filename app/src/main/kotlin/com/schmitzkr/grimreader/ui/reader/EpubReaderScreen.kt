@@ -119,6 +119,10 @@ data class EpubUiState(
     val toc: List<TocEntry> = emptyList(),
     val theme: String = "light",
     val fontPct: Int = 100,
+    /** `book`, `serif` or `sans`. */
+    val font: String = "book",
+    /** Line height as a percentage of the font size; 100 is the book's own. */
+    val linePct: Int = 100,
     val bookmarks: List<Bookmark> = emptyList(),
     val exiting: Boolean = false,
     val syncError: String? = null,
@@ -193,6 +197,8 @@ class EpubReaderViewModel @Inject constructor(
             val progress = runCatching { books.epubProgress(bookId) }.getOrNull()
             val theme = settings.epubTheme() ?: defaultTheme
             val font = settings.epubFontPct()
+            val family = settings.epubFont()
+            val line = settings.epubLinePct()
             saver = DebouncedSaver(
                 scope = viewModelScope,
                 persist = { books.saveEpubProgress(bookId, it, bookFileId) },
@@ -203,7 +209,7 @@ class EpubReaderViewModel @Inject constructor(
                     loading = false, title = book.title,
                     fileUrl = fileUrl,
                     initialCfi = progress?.cfi, cfi = progress?.cfi, percentage = progress?.percentage ?: 0.0,
-                    theme = theme, fontPct = font,
+                    theme = theme, fontPct = font, font = family, linePct = line,
                 )
             }
             loadBookmarks()
@@ -241,6 +247,19 @@ class EpubReaderViewModel @Inject constructor(
         state.update { it.copy(theme = name) }
         js("reader.setTheme(${JSONObject.quote(name)})")
         viewModelScope.launch { settings.setEpubTheme(name) }
+    }
+
+    fun setFont(name: String) {
+        state.update { it.copy(font = name) }
+        js("reader.setFont(${JSONObject.quote(name)})")
+        viewModelScope.launch { settings.setEpubFont(name) }
+    }
+
+    fun adjustLine(delta: Int) {
+        val pct = (state.value.linePct + delta).coerceIn(100, 220)
+        state.update { it.copy(linePct = pct) }
+        js("reader.setLineHeight($pct)")
+        viewModelScope.launch { settings.setEpubLinePct(pct) }
     }
 
     fun adjustFont(delta: Int) {
@@ -354,7 +373,10 @@ fun EpubReaderScreen(
         val url = state.fileUrl ?: return@LaunchedEffect
         if (!pageLoaded) return@LaunchedEffect
         val cfi = state.initialCfi?.let { JSONObject.quote(it) } ?: "null"
-        webView?.evaluateJavascript("reader.open(${JSONObject.quote(url)}, $cfi, ${JSONObject.quote(state.theme)}, ${state.fontPct})", null)
+        webView?.evaluateJavascript(
+            "reader.open(${JSONObject.quote(url)}, $cfi, ${JSONObject.quote(state.theme)}, ${state.fontPct}, ${JSONObject.quote(state.font)}, ${state.linePct})",
+            null,
+        )
     }
     LaunchedEffect(webView) {
         val w = webView ?: return@LaunchedEffect
@@ -399,31 +421,25 @@ fun EpubReaderScreen(
         }
 
         AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
-            Row(
-                Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.6f)).statusBarsPadding().padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White) }
+            ReaderBar(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp)) {
+                IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
                 Column(Modifier.weight(1f)) {
-                    Text(state.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(state.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (state.chapter.isNotBlank()) {
-                        Text(state.chapter, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(state.chapter, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 val here = state.bookmarks.any { it.cfi == state.cfi }
                 IconButton(onClick = { if (!here) vm.addBookmark(); sheet = "bookmarks" }) {
-                    Icon(if (here) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, "Bookmarks", tint = Color.White)
+                    Icon(if (here) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, "Bookmarks", tint = if (here) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                 }
-                IconButton(onClick = { sheet = "chapters" }) { Icon(Icons.AutoMirrored.Rounded.List, "Chapters", tint = Color.White) }
-                IconButton(onClick = { sheet = "display" }) { Icon(Icons.Rounded.FormatSize, "Display", tint = Color.White) }
+                IconButton(onClick = { sheet = "chapters" }) { Icon(Icons.AutoMirrored.Rounded.List, "Chapters") }
+                IconButton(onClick = { sheet = "display" }) { Icon(Icons.Rounded.FormatSize, "Display") }
             }
         }
         AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
-            Row(
-                Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.6f)).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page", tint = Color.White) }
+            ReaderBar(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
+                IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page") }
                 var drag by remember { mutableStateOf<Float?>(null) }
                 Slider(
                     value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
@@ -432,8 +448,8 @@ fun EpubReaderScreen(
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("${((drag?.times(100)) ?: state.percentage).toInt()}%", color = Color.White, style = MaterialTheme.typography.labelLarge)
-                IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page", tint = Color.White) }
+                Text("${((drag?.times(100)) ?: state.percentage).toInt()}%", style = MaterialTheme.typography.labelLarge)
+                IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
             }
         }
         if (state.exiting) {
@@ -510,6 +526,26 @@ fun EpubReaderScreen(
                     TextButton(onClick = { vm.adjustFont(-10) }, enabled = state.fontPct > 70) { Text("A−") }
                     Text("${state.fontPct}%", style = MaterialTheme.typography.labelLarge)
                     TextButton(onClick = { vm.adjustFont(10) }, enabled = state.fontPct < 200) { Text("A+") }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Font", style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(6.dp))
+                val fonts = listOf("book" to "Book's own", "serif" to "Serif", "sans" to "Sans")
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    fonts.forEachIndexed { i, (key, label) ->
+                        SegmentedButton(
+                            selected = state.font == key,
+                            onClick = { vm.setFont(key) },
+                            shape = SegmentedButtonDefaults.itemShape(i, fonts.size),
+                        ) { Text(label) }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Line spacing", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.adjustLine(-20) }, enabled = state.linePct > 100) { Text("−") }
+                    Text(if (state.linePct == 100) "Book's own" else "${state.linePct}%", style = MaterialTheme.typography.labelLarge)
+                    TextButton(onClick = { vm.adjustLine(20) }, enabled = state.linePct < 220) { Text("+") }
                 }
             }
         }

@@ -31,5 +31,18 @@ layer, playback service).
 ## Building locally
 
 JDK 21 at `JAVA_HOME`; Android SDK with platform 36 in `local.properties`
-(`sdk.dir=`). The dev box has 3 GB of RAM: `gradle.properties` keeps heap
-low and workers at 2. `./gradlew :core:test :app:assembleDebug`.
+(`sdk.dir=`) or `ANDROID_HOME`. The dev box has 3.8 GB of RAM and an
+uncapped Gradle build has crashed it: `gradle.properties` keeps one 1 GB
+JVM with the Kotlin compiler in-process and no daemon, and every local
+build runs inside a memory-capped systemd user scope through
+`~/.claude/scripts/gradle-build-limited.sh` (MemoryMax 2.2G, the same cap
+validated for Flutter's Gradle step). Run the phases separately so nothing
+is held in memory at once:
+
+```
+gradle-build-limited.sh -p . :app:assembleDebug
+gradle-build-limited.sh -p . :core:test :app:testDebugUnitTest
+gradle-build-limited.sh -p . :app:lintDebug
+```
+
+Never run a bare `./gradlew` here, and never two builds at once.

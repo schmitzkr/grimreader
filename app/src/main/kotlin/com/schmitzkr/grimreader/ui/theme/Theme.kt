@@ -33,8 +33,24 @@ enum class Accent(val label: String, val color: Color) {
     }
 }
 
-private fun onColorFor(background: Color): Color =
-    if (background.luminance() < 0.4f) Color.White else Color(0xFF111111)
+/** WCAG relative-luminance contrast ratio between two colours (1..21). */
+private fun contrastRatio(a: Color, b: Color): Float {
+    val l1 = a.luminance() + 0.05f
+    val l2 = b.luminance() + 0.05f
+    return maxOf(l1, l2) / minOf(l1, l2)
+}
+
+/**
+ * Whichever of white or near-black text actually reads better against
+ * [background], by contrast ratio rather than a fixed luminance cutoff --
+ * every one of the six accents below 0.4 luminance still contrasts about
+ * twice as well with near-black text as with white, so a flat threshold
+ * picked white for all of them regardless.
+ */
+fun onColorFor(background: Color): Color {
+    val nearBlack = Color(0xFF111111)
+    return if (contrastRatio(background, Color.White) >= contrastRatio(background, nearBlack)) Color.White else nearBlack
+}
 
 /**
  * Neutral grey surfaces (or pure black on OLED), one accent, no tonal tint

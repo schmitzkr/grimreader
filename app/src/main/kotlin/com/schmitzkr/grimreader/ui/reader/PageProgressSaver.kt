@@ -2,6 +2,7 @@ package com.schmitzkr.grimreader.ui.reader
 
 import com.schmitzkr.grimreader.core.model.PageProgress
 import com.schmitzkr.grimreader.core.playback.pagePercentage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -60,6 +61,12 @@ class PageProgressSaver(
     private suspend fun save(index: Int): Boolean = try {
         persist(progressAt(index))
         true
+    } catch (e: CancellationException) {
+        // Leaving the reader mid-save cancels this coroutine as a normal
+        // part of the screen going away -- rethrow so structured concurrency
+        // still sees it, instead of reporting "StandaloneCoroutine was
+        // cancelled" to the user as if it were a real sync failure.
+        throw e
     } catch (e: Exception) {
         onError(e)
         false

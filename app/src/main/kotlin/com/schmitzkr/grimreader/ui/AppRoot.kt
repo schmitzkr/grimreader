@@ -1,6 +1,7 @@
 package com.schmitzkr.grimreader.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -27,6 +28,9 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -259,16 +263,30 @@ private fun MainShell(vm: RootViewModel) {
                 .padding(bottom = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // Swiping the pill away, either direction, stops playback (the
+            // position is saved first) and clears it from the screen. Stopping
+            // playback flips `visible` below to false on the same frame the
+            // swipe finishes, so the AnimatedVisibility below used to always
+            // play its own downward exit on top of -- and fighting -- whichever
+            // direction SwipeToDismissBox had just animated the pill off in.
+            // Skip that second exit for a swipe dismissal; SwipeToDismissBox's
+            // own animation already finished the job. Reset on hasBook going
+            // true (a new pill), not on bookId changing, which also happens
+            // the moment stop() clears it -- that would race the flag this is
+            // meant to preserve through the exit animation.
+            var dismissedBySwipe by remember { mutableStateOf(false) }
+            LaunchedEffect(playback.hasBook) { if (playback.hasBook) dismissedBySwipe = false }
             AnimatedVisibility(
                 visible = playback.hasBook && !onPlayer,
                 enter = slideInVertically { it } + fadeIn(),
-                exit = slideOutVertically { it } + fadeOut(),
+                exit = if (dismissedBySwipe) ExitTransition.None else slideOutVertically { it } + fadeOut(),
             ) {
-                // Swiping the pill away, either direction, stops playback (the
-                // position is saved first) and clears it from the screen.
                 val dismiss = rememberSwipeToDismissBoxState(
                     confirmValueChange = { value ->
-                        if (value != SwipeToDismissBoxValue.Settled) vm.player.stop()
+                        if (value != SwipeToDismissBoxValue.Settled) {
+                            dismissedBySwipe = true
+                            vm.player.stop()
+                        }
                         value != SwipeToDismissBoxValue.Settled
                     },
                 )

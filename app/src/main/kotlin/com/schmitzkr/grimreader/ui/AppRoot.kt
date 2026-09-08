@@ -126,7 +126,10 @@ private fun MainShell(vm: RootViewModel) {
     val destination = backStack?.destination
     val onTab = tabs.any { tab -> destination?.hierarchy?.any { it.route == tab.route } == true }
     val playback by vm.player.state.collectAsStateWithLifecycle()
-    val onPlayer = destination?.route == Routes.PLAYER
+    // Every full-screen reading surface has its own floating bottom controls
+    // (the player screen, and each book reader's own page slider/chevrons)
+    // that the floating mini player would otherwise sit on top of.
+    val onReadingSurface = destination?.route in setOf(Routes.PLAYER, Routes.EPUB, Routes.READER)
 
     Box(Modifier.fillMaxSize()) {
         NavHost(
@@ -260,7 +263,7 @@ private fun MainShell(vm: RootViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             AnimatedVisibility(
-                visible = playback.hasBook && !onPlayer,
+                visible = playback.hasBook && !onReadingSurface,
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut(),
             ) {

@@ -102,15 +102,10 @@ import com.schmitzkr.grimreader.ui.components.EmptyState
 import com.schmitzkr.grimreader.ui.components.ErrorState
 import com.schmitzkr.grimreader.ui.components.LoadingState
 import com.schmitzkr.grimreader.ui.friendlyError
-import com.schmitzkr.grimreader.ui.theme.Accent
-import com.schmitzkr.grimreader.ui.theme.grimScheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -163,13 +158,6 @@ class EpubReaderViewModel @Inject constructor(
     val state = MutableStateFlow(EpubUiState())
     /** JavaScript for the page, in order. */
     val commands = MutableSharedFlow<String>(extraBufferCapacity = 32)
-    // So the reader's own chrome can be built with the app's actual grimScheme()
-    // (see EpubReaderScreen's chromeScheme) instead of a from-scratch Material
-    // scheme that loses the app's tuned surface colors and its
-    // surfaceTint = Color.Transparent -- that gap made the bars look washed out
-    // and translucent against a dark reading theme.
-    val accent: StateFlow<String> = settings.accent.stateIn(viewModelScope, SharingStarted.Eagerly, "violet")
-    val oledBlack: StateFlow<Boolean> = settings.oledBlack.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     private var bookId = -1L
     private var bookFileId: Long? = null
     private var saver: DebouncedSaver<EpubProgress>? = null
@@ -486,20 +474,12 @@ fun EpubReaderScreen(
         vm.commands.collect { w.evaluateJavascript(guardedEval(it), null) }
     }
 
+    // The reading theme (light/sepia/dark/black/forest) only ever changes the
+    // page background behind the WebView -- the chrome (bars, slider) always
+    // takes the app's own light/dark setting, same as the mini player does,
+    // per the user's own stated preference: "I think it looks better when
+    // the controls match the main theme but the page can be different."
     val pageBackground = readerThemeOptions.firstOrNull { it.key == state.theme }?.background ?: Color.White
-    // ReaderBar and the Slider otherwise take the app's own light/dark
-    // setting, entirely independent of which reading theme is picked here --
-    // a light bar sitting on a black page reads as broken. Built with the
-    // app's own grimScheme() (same accent/OLED preference as the rest of the
-    // app), not a from-scratch Material scheme -- that lost the app's tuned
-    // surface colors and its surfaceTint = Color.Transparent, which made the
-    // bars look washed out and translucent instead of matching the app.
-    val chromeDark = state.theme != "light" && state.theme != "sepia"
-    val accentName by vm.accent.collectAsStateWithLifecycle()
-    val oledBlack by vm.oledBlack.collectAsStateWithLifecycle()
-    val chromeScheme = remember(chromeDark, accentName, oledBlack) {
-        grimScheme(dark = chromeDark, accent = Accent.byName(accentName), oledBlack = oledBlack)
-    }
     Box(Modifier.fillMaxSize().background(pageBackground)) {
         when {
             state.loading -> LoadingState()
@@ -551,38 +531,36 @@ fun EpubReaderScreen(
             )
         }
 
-        MaterialTheme(colorScheme = chromeScheme) {
-            AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
-                ReaderBar(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp)) {
-                    IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
-                    Column(Modifier.weight(1f)) {
-                        Text(state.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (state.chapter.isNotBlank()) {
-                            Text(state.chapter, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
+        AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
+            ReaderBar(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp)) {
+                IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                Column(Modifier.weight(1f)) {
+                    Text(state.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (state.chapter.isNotBlank()) {
+                        Text(state.chapter, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    val here = state.bookmarks.any { it.cfi == state.cfi }
-                    IconButton(onClick = { if (!here) vm.addBookmark(); sheet = "bookmarks" }) {
-                        Icon(if (here) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, "Bookmarks", tint = if (here) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                    }
-                    IconButton(onClick = { sheet = "chapters" }) { Icon(Icons.AutoMirrored.Rounded.List, "Chapters") }
-                    IconButton(onClick = { sheet = "display" }) { Icon(Icons.Rounded.FormatSize, "Display") }
                 }
+                val here = state.bookmarks.any { it.cfi == state.cfi }
+                IconButton(onClick = { if (!here) vm.addBookmark(); sheet = "bookmarks" }) {
+                    Icon(if (here) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, "Bookmarks", tint = if (here) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                }
+                IconButton(onClick = { sheet = "chapters" }) { Icon(Icons.AutoMirrored.Rounded.List, "Chapters") }
+                IconButton(onClick = { sheet = "display" }) { Icon(Icons.Rounded.FormatSize, "Display") }
             }
-            AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
-                ReaderBar(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
-                    IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page") }
-                    var drag by remember { mutableStateOf<Float?>(null) }
-                    Slider(
-                        value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
-                        onValueChange = { drag = it },
-                        onValueChangeFinished = { drag?.let { vm.goToPercentage(it * 100.0) }; drag = null },
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text("${((drag?.times(100)) ?: state.percentage).toInt()}%", style = MaterialTheme.typography.labelLarge)
-                    IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
-                }
+        }
+        AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
+            ReaderBar(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
+                IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page") }
+                var drag by remember { mutableStateOf<Float?>(null) }
+                Slider(
+                    value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
+                    onValueChange = { drag = it },
+                    onValueChangeFinished = { drag?.let { vm.goToPercentage(it * 100.0) }; drag = null },
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("${((drag?.times(100)) ?: state.percentage).toInt()}%", style = MaterialTheme.typography.labelLarge)
+                IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
             }
         }
         if (state.exiting) {

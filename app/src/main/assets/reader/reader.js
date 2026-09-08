@@ -11,12 +11,28 @@
 (function () {
   var book = null, rendition = null, locationsReady = false, spineCount = 1, toc = [], lastLoc = null;
 
+  /*
+   * Each theme's CSS is registered under a selector scoped to that theme's
+   * own class (rendition.themes.select() toggles this class on <body>, and
+   * already did before this change) rather than the bare 'body'/'a' tags.
+   * epub.js's Themes manager creates one <style> node per theme the first
+   * time it is selected and never removes or reorders it -- with unscoped
+   * selectors every theme's rules stay "in effect" for the whole document
+   * simultaneously, and which one visually wins is decided by <style> tag
+   * order in <head>, not by which theme is actually selected. Cycling
+   * through every theme once left the page frozen on whichever was
+   * selected last, no matter what was tapped afterward (confirmed on
+   * device, no JS error either side: nothing here throws, it's a silent
+   * cascade-order bug, not a runtime one). Scoping each rule to its own
+   * theme class makes a stale, out-of-order <style> node harmless: its
+   * selectors simply stop matching once class is removed from <body>.
+   */
   var themes = {
-    light: { body: { background: '#ffffff', color: '#1b1b1f' }, a: { color: '#5b4bcf' } },
-    sepia: { body: { background: '#f4ecd8', color: '#3b2f22' }, a: { color: '#7a5230' } },
-    dark: { body: { background: '#121212', color: '#d6d6d6' }, a: { color: '#b0a4ff' } },
-    black: { body: { background: '#000000', color: '#cfcfcf' }, a: { color: '#a89bff' } },
-    forest: { body: { background: '#1b2a1e', color: '#dbe8db' }, a: { color: '#8fd19e' } }
+    light: { 'body.light': { background: '#ffffff', color: '#1b1b1f' }, '.light a': { color: '#5b4bcf' } },
+    sepia: { 'body.sepia': { background: '#f4ecd8', color: '#3b2f22' }, '.sepia a': { color: '#7a5230' } },
+    dark: { 'body.dark': { background: '#121212', color: '#d6d6d6' }, '.dark a': { color: '#b0a4ff' } },
+    black: { 'body.black': { background: '#000000', color: '#cfcfcf' }, '.black a': { color: '#a89bff' } },
+    forest: { 'body.forest': { background: '#1b2a1e', color: '#dbe8db' }, '.forest a': { color: '#8fd19e' } }
   };
 
   function report(name) {
@@ -209,7 +225,10 @@
     setTheme: function (name) {
       if (!themes[name]) name = 'light';
       if (rendition) rendition.themes.select(name);
-      document.body.style.background = themes[name].body.background;
+      // The outer WebView document's own background, fully covered by
+      // #viewer per index.html -- functionally inert, kept only so it
+      // never shows through during a resize/layout flash.
+      document.body.style.background = themes[name]['body.' + name].background;
     },
     setFontSize: function (pct) { if (rendition) rendition.themes.fontSize(pct + '%'); },
     /* 'book' keeps the publisher's fonts; the others override every element. */

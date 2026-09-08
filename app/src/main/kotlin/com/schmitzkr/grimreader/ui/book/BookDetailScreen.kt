@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -258,11 +259,22 @@ fun BookDetailScreen(
                         )
                     }
                     Spacer(Modifier.height(20.dp))
+                    // A softer container fill instead of the raw accent colour: this is the
+                    // one large solid-fill element among otherwise-outlined controls on this
+                    // screen, and the accent at full saturation with white/near-black text
+                    // read as too stark against it (reported directly against the black
+                    // reading theme, but the same raw-primary-as-large-background issue
+                    // applies regardless of the app's own light/dark setting).
+                    val ctaColors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
                     if (book.isAudiobook) {
                         Button(
                             onClick = {
                                 if (isCurrent) onOpenPlayer() else { vm.play(book.id); onOpenPlayer() }
                             },
+                            colors = ctaColors,
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                         ) {
                             Icon(Icons.Rounded.PlayArrow, null)
@@ -274,13 +286,13 @@ fun BookDetailScreen(
                         val hasEpub = book.primaryFileType == "EPUB" || book.files.any { it.bookType == "EPUB" }
                         val epubFile = book.files.firstOrNull { it.bookType == "EPUB" } ?: book.files.firstOrNull { it.bookType == "FB2" }
                         if (hasEpub || epubFile != null) {
-                            Button(onClick = { onOpenEpub(epubFile?.id) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                            Button(onClick = { onOpenEpub(epubFile?.id) }, colors = ctaColors, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                                 Icon(Icons.AutoMirrored.Rounded.MenuBook, null)
                                 Spacer(Modifier.width(8.dp))
                                 Text(if ((progress ?: 0.0) > 0) "Continue reading" else "Read")
                             }
                         } else if (pageFormat != null) {
-                            Button(onClick = { onOpenReader(pageFormat) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                            Button(onClick = { onOpenReader(pageFormat) }, colors = ctaColors, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                                 Icon(Icons.AutoMirrored.Rounded.MenuBook, null)
                                 Spacer(Modifier.width(8.dp))
                                 Text(if ((progress ?: 0.0) > 0) "Continue reading" else "Read")
@@ -290,6 +302,7 @@ fun BookDetailScreen(
                             Button(
                                 onClick = { primary?.let { vm.openWith(book, it) } },
                                 enabled = primary != null && opening == null,
+                                colors = ctaColors,
                                 modifier = Modifier.fillMaxWidth().height(52.dp),
                             ) {
                                 Icon(Icons.Rounded.OpenInNew, null)

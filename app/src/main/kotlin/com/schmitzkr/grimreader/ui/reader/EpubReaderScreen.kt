@@ -60,8 +60,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -104,10 +102,15 @@ import com.schmitzkr.grimreader.ui.components.EmptyState
 import com.schmitzkr.grimreader.ui.components.ErrorState
 import com.schmitzkr.grimreader.ui.components.LoadingState
 import com.schmitzkr.grimreader.ui.friendlyError
+import com.schmitzkr.grimreader.ui.theme.Accent
+import com.schmitzkr.grimreader.ui.theme.grimScheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -160,6 +163,13 @@ class EpubReaderViewModel @Inject constructor(
     val state = MutableStateFlow(EpubUiState())
     /** JavaScript for the page, in order. */
     val commands = MutableSharedFlow<String>(extraBufferCapacity = 32)
+    // So the reader's own chrome can be built with the app's actual grimScheme()
+    // (see EpubReaderScreen's chromeScheme) instead of a from-scratch Material
+    // scheme that loses the app's tuned surface colors and its
+    // surfaceTint = Color.Transparent -- that gap made the bars look washed out
+    // and translucent against a dark reading theme.
+    val accent: StateFlow<String> = settings.accent.stateIn(viewModelScope, SharingStarted.Eagerly, "violet")
+    val oledBlack: StateFlow<Boolean> = settings.oledBlack.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     private var bookId = -1L
     private var bookFileId: Long? = null
     private var saver: DebouncedSaver<EpubProgress>? = null
@@ -479,17 +489,16 @@ fun EpubReaderScreen(
     val pageBackground = readerThemeOptions.firstOrNull { it.key == state.theme }?.background ?: Color.White
     // ReaderBar and the Slider otherwise take the app's own light/dark
     // setting, entirely independent of which reading theme is picked here --
-    // a light bar sitting on a black page reads as broken. Keep the app's
-    // accent, swap only light/dark to follow the reading theme instead.
+    // a light bar sitting on a black page reads as broken. Built with the
+    // app's own grimScheme() (same accent/OLED preference as the rest of the
+    // app), not a from-scratch Material scheme -- that lost the app's tuned
+    // surface colors and its surfaceTint = Color.Transparent, which made the
+    // bars look washed out and translucent instead of matching the app.
     val chromeDark = state.theme != "light" && state.theme != "sepia"
-    val appPrimary = MaterialTheme.colorScheme.primary
-    val appOnPrimary = MaterialTheme.colorScheme.onPrimary
-    val chromeScheme = remember(chromeDark, appPrimary, appOnPrimary) {
-        if (chromeDark) {
-            darkColorScheme(primary = appPrimary, onPrimary = appOnPrimary, secondary = appPrimary, onSecondary = appOnPrimary)
-        } else {
-            lightColorScheme(primary = appPrimary, onPrimary = appOnPrimary, secondary = appPrimary, onSecondary = appOnPrimary)
-        }
+    val accentName by vm.accent.collectAsStateWithLifecycle()
+    val oledBlack by vm.oledBlack.collectAsStateWithLifecycle()
+    val chromeScheme = remember(chromeDark, accentName, oledBlack) {
+        grimScheme(dark = chromeDark, accent = Accent.byName(accentName), oledBlack = oledBlack)
     }
     Box(Modifier.fillMaxSize().background(pageBackground)) {
         when {

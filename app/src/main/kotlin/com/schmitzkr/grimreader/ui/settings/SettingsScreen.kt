@@ -59,6 +59,7 @@ import com.schmitzkr.grimreader.ui.adaptive.ReadableWidth
 import com.schmitzkr.grimreader.ui.components.GrimCard
 import com.schmitzkr.grimreader.ui.components.SectionLabel
 import com.schmitzkr.grimreader.ui.theme.Accent
+import com.schmitzkr.grimreader.ui.theme.onColorFor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -170,7 +171,7 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                                     .clickable { vm.setAccent(option) },
                                 contentAlignment = Alignment.Center,
                             ) {
-                                if (selected) Icon(Icons.Rounded.Check, option.label, tint = Color.White, modifier = Modifier.size(18.dp))
+                                if (selected) Icon(Icons.Rounded.Check, option.label, tint = onColorFor(option.color), modifier = Modifier.size(18.dp))
                             }
                         }
                     }

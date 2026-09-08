@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -255,6 +256,7 @@ fun PageReaderScreen(
     var chrome by remember { mutableStateOf(true) }
     var zoomed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val dark = isSystemInDarkTheme()
     val view = LocalView.current
     val exit = { vm.exit(onBack) }
     BackHandler { exit() }
@@ -269,9 +271,27 @@ fun PageReaderScreen(
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         if (chrome) controller.show(WindowInsetsCompat.Type.systemBars()) else controller.hide(WindowInsetsCompat.Type.systemBars())
     }
+    // The status bar and gesture nav bar sit directly over the page (always
+    // black for comics, night-mode-dependent for PDF), not over ReaderBar's
+    // own themed pill, so their icon color needs to track the page, not the
+    // app's own light/dark setting -- a light appearance (dark icons) stayed
+    // on top of an always-black comic page otherwise.
+    LaunchedEffect(state.night, format) {
+        val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
+        val pageIsLight = !state.night && format != PageFormat.CBX
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = pageIsLight
+            isAppearanceLightNavigationBars = pageIsLight
+        }
+    }
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose {
-            (view.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, view).show(WindowInsetsCompat.Type.systemBars()) }
+            (view.context as? Activity)?.window?.let { window ->
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.isAppearanceLightStatusBars = !dark
+                controller.isAppearanceLightNavigationBars = !dark
+            }
         }
     }
 

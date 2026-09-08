@@ -27,6 +27,34 @@ layer, playback service).
   the typed field alone for dual-format books.
 - The `continue-*` endpoints return nothing for admins; Continue rows are
   built from the filtered list endpoint (see `BooksRepository`).
+- **EPUB reader (`ui/reader/EpubReaderScreen.kt` + `assets/reader/`)**:
+  epub.js runs inside a `WebView` hosted in a Compose `AndroidView`; Kotlin
+  and the page talk over a `window.Android` JS bridge (`ReaderBridge`).
+  **Never trust the page's own `window.innerWidth`/`innerHeight` or the DOM
+  `resize` event to size the rendition** -- on-device testing found the
+  WebView reporting a real width but an exact zero height on first layout,
+  and the `resize` event never fires at all even on a genuine on-screen
+  size change (a rotation). `reader.open()`/`reader.resize()` instead take
+  explicit CSS-px width/height that Kotlin measures itself via
+  `Modifier.onSizeChanged` on the `AndroidView`; Compose's own layout is
+  the only sizing signal trusted for this component. Diagnosing anything
+  else in here: `reader.js`'s `open()` reports any thrown error through
+  the bridge to `Log.e("EpubReader", ...)`, `onConsoleMessage` pipes the
+  page's own console to the same tag, and `WebView.setWebContentsDebuggingEnabled`
+  is on in debug builds so `chrome://inspect` can attach live DevTools.
+- **`Surface`'s automatic content-color inference is not reliable once its
+  `color` doesn't exactly equal a theme role color** (e.g. one with a
+  modified alpha, as `ReaderBar` in `ui/reader/ReaderChrome.kt` uses) --
+  the inference silently fails and falls back to whatever text color was
+  ambient outside the `Surface`, which can belong to an entirely different
+  theme once a caller nests its own `MaterialTheme(colorScheme = ...)`
+  override inside it. Always pass an explicit `contentColor` in that case.
+- **Never `catch (e: Exception)` around a suspend call that can be
+  legitimately cancelled** (a debounced background save, for one) without
+  rethrowing `CancellationException` first -- otherwise leaving a screen
+  mid-save reports a normal cancellation as a real error to the user (seen
+  as a "StandaloneCoroutine was cancelled" Snackbar). See
+  `DebouncedSaver`/`PageProgressSaver` for the pattern.
 
 ## Building locally
 

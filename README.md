@@ -15,9 +15,11 @@ digital library server. Kotlin and Jetpack Compose.
 
 ## What works today
 
-- Connect to any Grimmory server, sign in with username and password
+- Connect to any Grimmory server, sign in with username and password or
+  through your identity provider's SSO
 - Home with the server's own rows, plus Up next in series and Recently
   finished (each switchable off in Settings)
+- Browse by series, author or shelf, and search across the whole library
 - Libraries with status and format filter pills and sorting
 - Book detail with progress and mark finished
 - Audiobook playback: single-file and folder-based books, resume from the
@@ -29,11 +31,13 @@ digital library server. Kotlin and Jetpack Compose.
 - Every file type the server stores has a path: FB2 is converted on the
   device and opens in the EPUB reader; MOBI, AZW3 and supplementary files
   can be handed to another app; a book's files are listed on its page
-- EPUB reader: chapters, bookmarks, light, sepia and dark pages, text size,
-  font choice and line spacing,
-  swipe or tap to turn, progress saved as the same CFI and percentage the
-  web reader uses so both open at the same place
-- Comic (CBX) and PDF readers: pinch to zoom, double-tap, page slider,
+- EPUB reader: chapters, bookmarks, five reading themes (light, sepia,
+  dark, black and forest), text size, font choice and line spacing, swipe
+  or tap the edges to turn a page, tap the middle to hide every control
+  for distraction-free reading, progress saved as the same CFI and
+  percentage the web reader uses so both open at the same place
+- Comic (CBX) and PDF readers: pinch to zoom, double-tap, tap the edges to
+  turn a page and the middle to hide the controls, page slider,
   right-to-left reading for manga, night mode for PDFs, progress saved to
   the server so the web reader opens on the same page
 - Download any book for offline use: audiobooks play, EPUB, FB2 and PDF
@@ -56,11 +60,14 @@ digital library server. Kotlin and Jetpack Compose.
 - Tablets and landscape: libraries as two panes, wider Home tiles, Settings
   and stats at a readable width, two-column EPUB pages once the screen is
   wide enough
+- Checks for a newer release on GitHub, with an in-app banner and one-tap
+  install
 
 ## Coming next
 
-In rough order: SSO sign-in, dashboard rows from the server's layout,
-series, authors and shelves, search, bookmarks and in-app updates. Each has an issue in the tracker.
+Nothing on a public roadmap right now; [open an
+issue](https://github.com/schmitzkr/grimreader/issues) for anything
+missing or broken.
 
 ## Building
 

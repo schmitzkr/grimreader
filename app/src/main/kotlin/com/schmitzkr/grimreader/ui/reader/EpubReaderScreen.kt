@@ -60,6 +60,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -475,6 +477,20 @@ fun EpubReaderScreen(
     }
 
     val pageBackground = readerThemeOptions.firstOrNull { it.key == state.theme }?.background ?: Color.White
+    // ReaderBar and the Slider otherwise take the app's own light/dark
+    // setting, entirely independent of which reading theme is picked here --
+    // a light bar sitting on a black page reads as broken. Keep the app's
+    // accent, swap only light/dark to follow the reading theme instead.
+    val chromeDark = state.theme != "light" && state.theme != "sepia"
+    val appPrimary = MaterialTheme.colorScheme.primary
+    val appOnPrimary = MaterialTheme.colorScheme.onPrimary
+    val chromeScheme = remember(chromeDark, appPrimary, appOnPrimary) {
+        if (chromeDark) {
+            darkColorScheme(primary = appPrimary, onPrimary = appOnPrimary, secondary = appPrimary, onSecondary = appOnPrimary)
+        } else {
+            lightColorScheme(primary = appPrimary, onPrimary = appOnPrimary, secondary = appPrimary, onSecondary = appOnPrimary)
+        }
+    }
     Box(Modifier.fillMaxSize().background(pageBackground)) {
         when {
             state.loading -> LoadingState()
@@ -526,36 +542,38 @@ fun EpubReaderScreen(
             )
         }
 
-        AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
-            ReaderBar(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp)) {
-                IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
-                Column(Modifier.weight(1f)) {
-                    Text(state.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (state.chapter.isNotBlank()) {
-                        Text(state.chapter, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        MaterialTheme(colorScheme = chromeScheme) {
+            AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
+                ReaderBar(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp)) {
+                    IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                    Column(Modifier.weight(1f)) {
+                        Text(state.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (state.chapter.isNotBlank()) {
+                            Text(state.chapter, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
+                    val here = state.bookmarks.any { it.cfi == state.cfi }
+                    IconButton(onClick = { if (!here) vm.addBookmark(); sheet = "bookmarks" }) {
+                        Icon(if (here) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, "Bookmarks", tint = if (here) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                    }
+                    IconButton(onClick = { sheet = "chapters" }) { Icon(Icons.AutoMirrored.Rounded.List, "Chapters") }
+                    IconButton(onClick = { sheet = "display" }) { Icon(Icons.Rounded.FormatSize, "Display") }
                 }
-                val here = state.bookmarks.any { it.cfi == state.cfi }
-                IconButton(onClick = { if (!here) vm.addBookmark(); sheet = "bookmarks" }) {
-                    Icon(if (here) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder, "Bookmarks", tint = if (here) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                }
-                IconButton(onClick = { sheet = "chapters" }) { Icon(Icons.AutoMirrored.Rounded.List, "Chapters") }
-                IconButton(onClick = { sheet = "display" }) { Icon(Icons.Rounded.FormatSize, "Display") }
             }
-        }
-        AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
-            ReaderBar(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
-                IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page") }
-                var drag by remember { mutableStateOf<Float?>(null) }
-                Slider(
-                    value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
-                    onValueChange = { drag = it },
-                    onValueChangeFinished = { drag?.let { vm.goToPercentage(it * 100.0) }; drag = null },
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("${((drag?.times(100)) ?: state.percentage).toInt()}%", style = MaterialTheme.typography.labelLarge)
-                IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
+            AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
+                ReaderBar(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
+                    IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page") }
+                    var drag by remember { mutableStateOf<Float?>(null) }
+                    Slider(
+                        value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
+                        onValueChange = { drag = it },
+                        onValueChangeFinished = { drag?.let { vm.goToPercentage(it * 100.0) }; drag = null },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("${((drag?.times(100)) ?: state.percentage).toInt()}%", style = MaterialTheme.typography.labelLarge)
+                    IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
+                }
             }
         }
         if (state.exiting) {

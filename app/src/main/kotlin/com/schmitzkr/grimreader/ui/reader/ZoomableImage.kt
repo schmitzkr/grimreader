@@ -25,13 +25,15 @@ import androidx.compose.ui.unit.IntSize
 
 /**
  * Pinch to zoom, drag to pan while zoomed, double-tap to toggle 2.5× and
- * back, single tap reported to the caller (readers use it for the chrome).
- * Pans are clamped so the page never leaves the viewport.
+ * back, single tap reported to the caller as the horizontal position it
+ * landed at (0f left edge, 1f right edge) so a reader can turn pages from
+ * the edges and reserve the middle for its own chrome toggle. Pans are
+ * clamped so the page never leaves the viewport.
  */
 @Composable
 fun ZoomableBox(
     modifier: Modifier = Modifier,
-    onTap: () -> Unit,
+    onTap: (xFraction: Float) -> Unit,
     onZoomChanged: (Boolean) -> Unit = {},
     resetKey: Any? = null,
     content: @Composable () -> Unit,
@@ -53,7 +55,7 @@ fun ZoomableBox(
             .onSizeChanged { size = it }
             .pointerInput(resetKey) {
                 detectTapGestures(
-                    onTap = { onTap() },
+                    onTap = { tap -> onTap(tap.x / size.width.toFloat().coerceAtLeast(1f)) },
                     onDoubleTap = { tap ->
                         if (scale > 1f) {
                             scale = 1f; offset = Offset.Zero

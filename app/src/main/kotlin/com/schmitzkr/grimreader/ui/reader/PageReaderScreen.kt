@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -253,6 +254,7 @@ fun PageReaderScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     var chrome by remember { mutableStateOf(true) }
     var zoomed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val view = LocalView.current
     val exit = { vm.exit(onBack) }
     BackHandler { exit() }
@@ -297,7 +299,18 @@ fun PageReaderScreen(
                     modifier = Modifier.fillMaxSize(),
                 ) { index ->
                     ZoomableBox(
-                        onTap = { chrome = !chrome },
+                        // Edges turn the page (left back, right forward); the
+                        // middle third toggles the chrome, same split the
+                        // EPUB reader uses. Disabled while zoomed in, same as
+                        // the pager's own swipe-to-turn.
+                        onTap = { x ->
+                            when {
+                                zoomed -> chrome = !chrome
+                                x < 0.3f -> scope.launch { pager.animateScrollToPage((pager.currentPage - 1).coerceAtLeast(0)) }
+                                x > 0.7f -> scope.launch { pager.animateScrollToPage((pager.currentPage + 1).coerceAtMost(source.count - 1)) }
+                                else -> chrome = !chrome
+                            }
+                        },
                         onZoomChanged = { zoomed = it },
                         resetKey = index,
                     ) {

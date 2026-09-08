@@ -432,9 +432,27 @@ fun EpubReaderScreen(
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         if (chrome) controller.show(WindowInsetsCompat.Type.systemBars()) else controller.hide(WindowInsetsCompat.Type.systemBars())
     }
+    // The status bar and gesture nav bar are transparent and sit directly over
+    // the page background (not over ReaderBar's own themed pill), so their
+    // icon color needs to track whatever the reading theme actually shows,
+    // not the app's own light/dark setting -- a light appearance (dark icons)
+    // stayed on top of a black reading page otherwise.
+    LaunchedEffect(state.theme) {
+        val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
+        val pageIsLight = state.theme == "light" || state.theme == "sepia"
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = pageIsLight
+            isAppearanceLightNavigationBars = pageIsLight
+        }
+    }
     DisposableEffect(Unit) {
         onDispose {
-            (view.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, view).show(WindowInsetsCompat.Type.systemBars()) }
+            (view.context as? Activity)?.window?.let { window ->
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.isAppearanceLightStatusBars = !dark
+                controller.isAppearanceLightNavigationBars = !dark
+            }
         }
     }
 

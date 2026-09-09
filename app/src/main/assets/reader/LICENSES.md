@@ -1,8 +1,9 @@
 # Third-party code in this directory
 
 The EPUB reader renders books in a WebView with two vendored libraries.
-`index.html` and `reader.js` are GrimReader's own (MIT, see the repository
-licence).
+`index.html` and `reader.js` are GrimReader's own (GPL-3.0-only for
+versions released from here forward; MIT for earlier versions -- see the
+repository licence).
 
 ## epub.js 0.3.93 (`epub.min.js`)
 

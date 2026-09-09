@@ -94,4 +94,9 @@ adaptive icon layers in `app/src/main/res`).
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE).
+GNU General Public License v3.0 only (GPL-3.0-only), see
+[LICENSE](LICENSE).
+
+This applies to versions released from here forward. Earlier versions
+were released under the MIT License; that grant isn't retracted and
+those versions remain available under MIT.

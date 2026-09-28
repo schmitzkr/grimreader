@@ -9,7 +9,7 @@
  * past the first page, which is what the server's READING threshold needs.
  */
 (function () {
-  var book = null, rendition = null, locationsReady = false, spineCount = 1, toc = [], lastLoc = null;
+  var book = null, rendition = null, locationsReady = false, spineCount = 1, toc = [], lastLoc = null, pendingResize = null;
 
   /*
    * Each theme's CSS is registered under a selector scoped to that theme's
@@ -73,19 +73,6 @@
   }
 
   function chapterFor(loc) { return chapterForHref(loc.start.href); }
-
-  /* The section a percentage would land on, without touching the rendition --
-   * chapter-level, so dragging the position slider can preview which chapter
-   * it will jump to before it actually does. */
-  function sectionForPercentage(f) {
-    if (!book) return null;
-    if (locationsReady) {
-      var cfi = book.locations.cfiFromPercentage(f);
-      return cfi ? book.spine.get(cfi) : null;
-    }
-    var idx = Math.min(spineCount - 1, Math.floor(f * spineCount));
-    return book.spine.get(idx);
-  }
 
   function relocated(loc) {
     lastLoc = loc;
@@ -222,13 +209,24 @@
        * constructor, not ready the instant renderTo() returns) -- calling
        * resize() before it exists threw "Cannot read properties of
        * undefined (reading 'resize')" from inside epub.js itself. rendition
-       * .started resolves once that setup has actually run. */
+       * .started resolves once that setup has actually run. Several resize
+       * calls can pile up before that (the WebView's initial layout settles
+       * in more than one pass); pendingResize keeps only the last requested
+       * size so they don't all fire back-to-back once ready, each doing its
+       * own clear-and-relayout pass and visibly flashing the page. */
       var run = function () {
         rendition.resize(width, height);
         rendition.spread(spreadFor(width));
         logViewerState('after-explicit-resize');
       };
-      if (rendition.manager) run(); else rendition.started.then(run).catch(fail);
+      if (rendition.manager) { run(); return; }
+      pendingResize = { width: width, height: height };
+      rendition.started.then(function () {
+        if (pendingResize && pendingResize.width === width && pendingResize.height === height) {
+          pendingResize = null;
+          run();
+        }
+      }).catch(fail);
     },
     next: function () { if (rendition) rendition.next(); },
     prev: function () { if (rendition) rendition.prev(); },
@@ -243,12 +241,6 @@
       var idx = Math.min(spineCount - 1, Math.floor(f * spineCount));
       var item = book.spine.get(idx);
       if (item) rendition.display(item.href).catch(fail);
-    },
-    /* Resolves the chapter a percentage would land on, without displaying it,
-     * so dragging the position slider can preview where it will jump to. */
-    preview: function (p) {
-      var section = sectionForPercentage(Math.max(0, Math.min(1, p / 100)));
-      report('onPreview', p, section ? chapterForHref(section.href) : '');
     },
     setTheme: function (name) {
       if (!themes[name]) name = 'light';

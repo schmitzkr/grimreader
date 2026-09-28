@@ -129,8 +129,6 @@ data class EpubUiState(
     val cfi: String? = null,
     val percentage: Double = 0.0,
     val chapter: String = "",
-    /** The chapter the position slider is being dragged towards, or null when not dragging. */
-    val previewChapter: String? = null,
     val toc: List<TocEntry> = emptyList(),
     val theme: String = "light",
     val fontPct: Int = 100,
@@ -243,11 +241,6 @@ class EpubReaderViewModel @Inject constructor(
         state.update { it.copy(toc = toc) }
     }
 
-    /** From the page: the chapter a dragged-to percentage would land on. */
-    fun previewed(chapter: String) = state.update { it.copy(previewChapter = chapter) }
-
-    fun clearPreview() = state.update { it.copy(previewChapter = null) }
-
     fun pageError(message: String) {
         // The Snackbar this drives is easy to miss or dismiss before it's read;
         // this is the only path (unlike onConsoleMessage) that makes a page
@@ -266,7 +259,6 @@ class EpubReaderViewModel @Inject constructor(
     fun prev() = js("reader.prev()")
     fun goTo(target: String) = js("reader.display(${JSONObject.quote(target)})")
     fun goToPercentage(p: Double) = js("reader.goToPercentage($p)")
-    fun previewAt(p: Double) = js("reader.preview($p)")
 
     fun setTheme(name: String) {
         state.update { it.copy(theme = name) }
@@ -365,7 +357,6 @@ private fun guardedEval(js: String): String =
 private class ReaderBridge(private val vm: EpubReaderViewModel, private val tapped: () -> Unit) {
     @JavascriptInterface fun onRelocated(cfi: String, percentage: Double, chapter: String, atEnd: Boolean) = vm.relocated(cfi, percentage, chapter)
     @JavascriptInterface fun onReady(tocJson: String) = vm.ready(tocJson)
-    @JavascriptInterface fun onPreview(percentage: Double, chapter: String) = vm.previewed(chapter)
     @JavascriptInterface fun onError(message: String) = vm.pageError(message)
     @JavascriptInterface fun onTap() = tapped()
 }
@@ -568,9 +559,15 @@ fun EpubReaderScreen(
                 IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
                 Column(Modifier.weight(1f)) {
                     Text(state.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    // While the position slider is dragged, this swaps to the chapter it would
-                    // land on -- the trickplay-style preview for a book with no page images to show.
-                    val shownChapter = if (drag != null) state.previewChapter ?: "" else state.chapter
+                    // While the position slider is dragged, this swaps to the chapter it would land
+                    // on -- the trickplay-style preview for a book with no page images to show.
+                    // Approximated from the already-loaded TOC's order rather than asking the page
+                    // (a JS round trip on every drag frame was visibly janky and not worth the
+                    // extra precision over what's just an in-progress preview).
+                    val toc = state.toc
+                    val shownChapter = if (drag != null && toc.isNotEmpty()) {
+                        toc[(drag!! * toc.size).toInt().coerceIn(0, toc.size - 1)].label
+                    } else if (drag == null) state.chapter else ""
                     if (shownChapter.isNotBlank()) {
                         Text(shownChapter, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -588,8 +585,8 @@ fun EpubReaderScreen(
                 IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page") }
                 Slider(
                     value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
-                    onValueChange = { drag = it; vm.previewAt(it * 100.0) },
-                    onValueChangeFinished = { drag?.let { vm.goToPercentage(it * 100.0) }; drag = null; vm.clearPreview() },
+                    onValueChange = { drag = it },
+                    onValueChangeFinished = { drag?.let { vm.goToPercentage(it * 100.0) }; drag = null },
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))

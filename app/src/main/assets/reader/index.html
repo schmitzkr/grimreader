@@ -4,7 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #ffffff; }
+  /* Transparent, not a hardcoded color: the WebView itself is transparent
+     (see EpubReaderScreen.kt) over a Compose Box already painted in the
+     current reading theme's color, so any moment #viewer has nothing
+     painted yet (initial load, a resize's clear/relayout) shows that
+     correct color through instead of flashing this page's own background. */
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: transparent; }
   #viewer { position: absolute; top: 0; right: 0; bottom: 0; left: 0; }
 </style>
 <script>

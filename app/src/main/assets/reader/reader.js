@@ -62,15 +62,29 @@
     return Math.round(((idx + within) / spineCount) * 1000) / 10;
   }
 
-  function chapterFor(loc) {
-    var href = loc.start.href || '';
-    var base = href.split('#')[0];
+  function chapterForHref(href) {
+    var base = (href || '').split('#')[0];
     var found = '';
     toc.forEach(function (t) {
       var th = t.href.split('#')[0];
       if (th && (th === base || base.slice(-th.length) === th || th.slice(-base.length) === base)) found = found || t.label;
     });
     return found;
+  }
+
+  function chapterFor(loc) { return chapterForHref(loc.start.href); }
+
+  /* The section a percentage would land on, without touching the rendition --
+   * chapter-level, so dragging the position slider can preview which chapter
+   * it will jump to before it actually does. */
+  function sectionForPercentage(f) {
+    if (!book) return null;
+    if (locationsReady) {
+      var cfi = book.locations.cfiFromPercentage(f);
+      return cfi ? book.spine.get(cfi) : null;
+    }
+    var idx = Math.min(spineCount - 1, Math.floor(f * spineCount));
+    return book.spine.get(idx);
   }
 
   function relocated(loc) {
@@ -204,9 +218,17 @@
      * are CSS px, same units open() takes. */
     resize: function (width, height) {
       if (!rendition) return;
-      rendition.resize(width, height);
-      rendition.spread(spreadFor(width));
-      logViewerState('after-explicit-resize');
+      /* rendition.manager is set up asynchronously (queued in the Rendition
+       * constructor, not ready the instant renderTo() returns) -- calling
+       * resize() before it exists threw "Cannot read properties of
+       * undefined (reading 'resize')" from inside epub.js itself. rendition
+       * .started resolves once that setup has actually run. */
+      var run = function () {
+        rendition.resize(width, height);
+        rendition.spread(spreadFor(width));
+        logViewerState('after-explicit-resize');
+      };
+      if (rendition.manager) run(); else rendition.started.then(run).catch(fail);
     },
     next: function () { if (rendition) rendition.next(); },
     prev: function () { if (rendition) rendition.prev(); },
@@ -221,6 +243,12 @@
       var idx = Math.min(spineCount - 1, Math.floor(f * spineCount));
       var item = book.spine.get(idx);
       if (item) rendition.display(item.href).catch(fail);
+    },
+    /* Resolves the chapter a percentage would land on, without displaying it,
+     * so dragging the position slider can preview where it will jump to. */
+    preview: function (p) {
+      var section = sectionForPercentage(Math.max(0, Math.min(1, p / 100)));
+      report('onPreview', p, section ? chapterForHref(section.href) : '');
     },
     setTheme: function (name) {
       if (!themes[name]) name = 'light';

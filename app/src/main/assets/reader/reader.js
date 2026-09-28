@@ -9,7 +9,7 @@
  * past the first page, which is what the server's READING threshold needs.
  */
 (function () {
-  var book = null, rendition = null, locationsReady = false, spineCount = 1, toc = [], lastLoc = null;
+  var book = null, rendition = null, locationsReady = false, spineCount = 1, toc = [], lastLoc = null, pendingResize = null;
 
   /*
    * Each theme's CSS is registered under a selector scoped to that theme's
@@ -62,9 +62,8 @@
     return Math.round(((idx + within) / spineCount) * 1000) / 10;
   }
 
-  function chapterFor(loc) {
-    var href = loc.start.href || '';
-    var base = href.split('#')[0];
+  function chapterForHref(href) {
+    var base = (href || '').split('#')[0];
     var found = '';
     toc.forEach(function (t) {
       var th = t.href.split('#')[0];
@@ -72,6 +71,8 @@
     });
     return found;
   }
+
+  function chapterFor(loc) { return chapterForHref(loc.start.href); }
 
   function relocated(loc) {
     lastLoc = loc;
@@ -188,6 +189,11 @@
           return book.locations.generate(1024);
         }).then(function () {
           locationsReady = true;
+          /* One-time: lets Kotlin turn a percentage into a "page" (epub.js's own
+           * ~1024-character locations, the same stand-in for print pages Kindle-
+           * style readers use for reflowable text) without a page round trip on
+           * every drag frame of the position slider. */
+          report('onLocationsReady', book.locations.total + 1);
           if (lastLoc) relocated(lastLoc);
         }).catch(fail);
         var first = cfi ? rendition.display(cfi).catch(function () { return rendition.display(); }) : rendition.display();
@@ -204,9 +210,28 @@
      * are CSS px, same units open() takes. */
     resize: function (width, height) {
       if (!rendition) return;
-      rendition.resize(width, height);
-      rendition.spread(spreadFor(width));
-      logViewerState('after-explicit-resize');
+      /* rendition.manager is set up asynchronously (queued in the Rendition
+       * constructor, not ready the instant renderTo() returns) -- calling
+       * resize() before it exists threw "Cannot read properties of
+       * undefined (reading 'resize')" from inside epub.js itself. rendition
+       * .started resolves once that setup has actually run. Several resize
+       * calls can pile up before that (the WebView's initial layout settles
+       * in more than one pass); pendingResize keeps only the last requested
+       * size so they don't all fire back-to-back once ready, each doing its
+       * own clear-and-relayout pass and visibly flashing the page. */
+      var run = function () {
+        rendition.resize(width, height);
+        rendition.spread(spreadFor(width));
+        logViewerState('after-explicit-resize');
+      };
+      if (rendition.manager) { run(); return; }
+      pendingResize = { width: width, height: height };
+      rendition.started.then(function () {
+        if (pendingResize && pendingResize.width === width && pendingResize.height === height) {
+          pendingResize = null;
+          run();
+        }
+      }).catch(fail);
     },
     next: function () { if (rendition) rendition.next(); },
     prev: function () { if (rendition) rendition.prev(); },

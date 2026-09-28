@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -129,6 +130,8 @@ data class EpubUiState(
     val cfi: String? = null,
     val percentage: Double = 0.0,
     val chapter: String = "",
+    /** epub.js's own ~1024-character locations, used as a page count; null until generated (a short session may never reach it). */
+    val totalLocations: Int? = null,
     val toc: List<TocEntry> = emptyList(),
     val theme: String = "light",
     val fontPct: Int = 100,
@@ -240,6 +243,8 @@ class EpubReaderViewModel @Inject constructor(
         val toc = runCatching { json.decodeFromString(ListSerializer(TocEntry.serializer()), tocJson) }.getOrDefault(emptyList())
         state.update { it.copy(toc = toc) }
     }
+
+    fun locationsReady(total: Int) = state.update { it.copy(totalLocations = total) }
 
     fun pageError(message: String) {
         // The Snackbar this drives is easy to miss or dismiss before it's read;
@@ -357,6 +362,7 @@ private fun guardedEval(js: String): String =
 private class ReaderBridge(private val vm: EpubReaderViewModel, private val tapped: () -> Unit) {
     @JavascriptInterface fun onRelocated(cfi: String, percentage: Double, chapter: String, atEnd: Boolean) = vm.relocated(cfi, percentage, chapter)
     @JavascriptInterface fun onReady(tocJson: String) = vm.ready(tocJson)
+    @JavascriptInterface fun onLocationsReady(total: Int) = vm.locationsReady(total)
     @JavascriptInterface fun onError(message: String) = vm.pageError(message)
     @JavascriptInterface fun onTap() = tapped()
 }
@@ -409,6 +415,7 @@ fun EpubReaderScreen(
     var chrome by remember { mutableStateOf(true) }
     var sheet by remember { mutableStateOf<String?>(null) }
     var pageLoaded by remember { mutableStateOf(false) }
+    var drag by remember { mutableStateOf<Float?>(null) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     // Measured from Compose's own layout, not read from the page's
     // window.innerWidth/innerHeight: on-device testing found the WebView
@@ -573,7 +580,6 @@ fun EpubReaderScreen(
         AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
             ReaderBar(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
                 IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page") }
-                var drag by remember { mutableStateOf<Float?>(null) }
                 Slider(
                     value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
                     onValueChange = { drag = it },
@@ -581,7 +587,35 @@ fun EpubReaderScreen(
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("${((drag?.times(100)) ?: state.percentage).toInt()}%", style = MaterialTheme.typography.labelLarge)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // While dragging, the chapter and page it would land on show right
+                    // above the percentage, live -- the same trickplay-style preview the
+                    // comic/PDF reader's page slider shows, adapted for a book with no
+                    // page images: an approximate chapter from the already-loaded TOC's
+                    // order, and a "page" from epub.js's own ~1024-character locations
+                    // (the same stand-in Kindle-style readers use for reflowable text).
+                    // Both stay purely local to Kotlin -- no page round trip per drag frame.
+                    val toc = state.toc
+                    val total = state.totalLocations
+                    val d = drag
+                    if (d != null) {
+                        val chapter = toc.takeIf { it.isNotEmpty() }?.let { it[(d * it.size).toInt().coerceIn(0, it.size - 1)].label }
+                        val page = total?.takeIf { it > 0 }?.let { (d * it).toInt().coerceIn(0, it - 1) + 1 }
+                        val label = listOfNotNull(chapter?.takeIf { it.isNotBlank() }, page?.let { p -> "p.$p${total?.let { "/$it" } ?: ""}" })
+                            .joinToString(" · ")
+                        if (label.isNotBlank()) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 110.dp),
+                            )
+                        }
+                    }
+                    Text("${((d?.times(100)) ?: state.percentage).toInt()}%", style = MaterialTheme.typography.labelLarge)
+                }
                 IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
             }
         }

@@ -189,6 +189,11 @@
           return book.locations.generate(1024);
         }).then(function () {
           locationsReady = true;
+          /* One-time: lets Kotlin turn a percentage into a "page" (epub.js's own
+           * ~1024-character locations, the same stand-in for print pages Kindle-
+           * style readers use for reflowable text) without a page round trip on
+           * every drag frame of the position slider. */
+          report('onLocationsReady', book.locations.total + 1);
           if (lastLoc) relocated(lastLoc);
         }).catch(fail);
         var first = cfi ? rendition.display(cfi).catch(function () { return rendition.display(); }) : rendition.display();

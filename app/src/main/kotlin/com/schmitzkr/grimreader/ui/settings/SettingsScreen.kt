@@ -3,6 +3,7 @@ package com.schmitzkr.grimreader.ui.settings
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -262,12 +263,12 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                     Item(
                         "GrimReader",
                         "GPL-3.0-only · github.com/${UpdateRepository.REPO}",
-                    ) { openInBrowser(context, "https://github.com/${UpdateRepository.REPO}") }
+                    ) { openInBrowser(context, Uri.parse("https://github.com/${UpdateRepository.REPO}")) }
                     HorizontalDivider()
                     Item(
                         "Report an issue",
                         "Open a bug report or feature request on GitHub",
-                    ) { openInBrowser(context, "https://github.com/${UpdateRepository.REPO}/issues/new") }
+                    ) { openInBrowser(context, newIssueUrl()) }
                     HorizontalDivider()
                     Item("Sign out", "Keep the server, return to sign-in") { confirm = "signout" }
                     HorizontalDivider()
@@ -316,10 +317,24 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
 }
 
 /** Opens [url] in a Custom Tab, the same way OidcFlow opens the sign-in page. */
-private fun openInBrowser(context: Context, url: String) {
+private fun openInBrowser(context: Context, url: Uri) {
     val tab = CustomTabsIntent.Builder().setShowTitle(true).build()
     tab.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    tab.launchUrl(context, Uri.parse(url))
+    tab.launchUrl(context, url)
+}
+
+/** A new-issue link pre-filled with the installed version and device, so a report doesn't start blank. */
+private fun newIssueUrl(): Uri {
+    val body = """
+        **App version:** ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})
+        **Android version:** ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})
+        **Device:** ${Build.MANUFACTURER} ${Build.MODEL}
+
+        <!-- What happened? What did you expect instead? -->
+    """.trimIndent()
+    return Uri.parse("https://github.com/${UpdateRepository.REPO}/issues/new").buildUpon()
+        .appendQueryParameter("body", body)
+        .build()
 }
 
 @Composable

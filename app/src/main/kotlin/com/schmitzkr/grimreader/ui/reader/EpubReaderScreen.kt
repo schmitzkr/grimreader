@@ -466,7 +466,11 @@ fun EpubReaderScreen(
         if (!pageLoaded) return@LaunchedEffect
         val size = webViewSizePx?.takeIf { it.width > 0 && it.height > 0 } ?: return@LaunchedEffect
         opened = true
-        val cfi = state.initialCfi?.let { JSONObject.quote(it) } ?: "null"
+        // The VM's own cfi tracks every relocation since open(), so a reopen after the
+        // WebView itself was torn down and rebuilt (e.g. a rotation the manifest's
+        // configChanges doesn't cover) still lands on the current page, not the one the
+        // book happened to be on when this screen first loaded.
+        val cfi = (state.cfi ?: state.initialCfi)?.let { JSONObject.quote(it) } ?: "null"
         val widthCss = (size.width / density).toInt()
         val heightCss = (size.height / density).toInt()
         webView?.evaluateJavascript(

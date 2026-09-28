@@ -40,6 +40,17 @@ class ModelsTest {
     }
 
     @Test
+    fun `a book missing title still decodes instead of failing the whole page`() {
+        val page = json.decodeFromString(
+            PageResponse.serializer(Book.serializer()),
+            """{"content":[{"id":1},{"id":2,"title":"B"}],"page":0,"size":100,"totalElements":2}""",
+        )
+        assertEquals(2, page.content.size)
+        assertEquals("", page.content[0].title)
+        assertEquals("B", page.content[1].title)
+    }
+
+    @Test
     fun `admin permission uses the Lombok key`() {
         val user = json.decodeFromString(
             CurrentUser.serializer(),

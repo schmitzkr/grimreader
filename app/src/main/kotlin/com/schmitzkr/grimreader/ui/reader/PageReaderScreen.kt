@@ -14,12 +14,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.DarkMode
@@ -31,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,14 +47,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -81,6 +90,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 /** What a page shows: an authenticated URL for a comic page, or a rendered PDF page. */
 sealed interface PageSource {
@@ -255,6 +265,12 @@ fun PageReaderScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     var chrome by remember { mutableStateOf(true) }
     var zoomed by remember { mutableStateOf(false) }
+    // Trickplay page scrubbing: dragging the slider tracks a live target page and
+    // shows a floating preview of it above the thumb, rather than jumping blind
+    // until the finger lifts.
+    var drag by remember { mutableStateOf<Float?>(null) }
+    var rootCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var sliderCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val scope = rememberCoroutineScope()
     val dark = isSystemInDarkTheme()
     val view = LocalView.current
@@ -295,7 +311,11 @@ fun PageReaderScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(if (state.night || format == PageFormat.CBX) Color.Black else Color.White)) {
+    Box(
+        Modifier.fillMaxSize()
+            .background(if (state.night || format == PageFormat.CBX) Color.Black else Color.White)
+            .onGloballyPositioned { rootCoords = it },
+    ) {
         when {
             state.loading -> LoadingState()
             state.error != null -> ErrorState(state.error!!, onRetry = vm::retry)
@@ -363,17 +383,45 @@ fun PageReaderScreen(
         val source = state.source
         AnimatedVisibility(visible = chrome && source != null && source.count > 1, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
             val count = source?.count ?: 1
+            val previewIndex = (drag ?: state.index.toFloat()).roundToInt().coerceIn(0, count - 1)
             ReaderBar(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
-                Text("${state.index + 1} / $count", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 12.dp))
+                Text("${previewIndex + 1} / $count", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 12.dp))
                 Spacer(Modifier.width(12.dp))
-                var drag by remember { mutableStateOf<Float?>(null) }
                 Slider(
                     value = drag ?: state.index.toFloat(),
                     onValueChange = { drag = it },
-                    onValueChangeFinished = { drag?.let { vm.jump(it.toInt()) }; drag = null },
+                    onValueChangeFinished = { drag?.let { vm.jump(it.roundToInt()) }; drag = null },
                     valueRange = 0f..(count - 1).toFloat(),
-                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    modifier = Modifier.weight(1f).padding(end = 8.dp).onGloballyPositioned { sliderCoords = it },
                 )
+            }
+        }
+        // The trickplay-style preview bubble: while the slider is being dragged, a small
+        // thumbnail of the page under the thumb floats above it, so the target page can be
+        // seen before the finger lifts rather than only after the jump lands.
+        val previewDrag = drag
+        val previewRoot = rootCoords
+        val previewSlider = sliderCoords
+        if (previewDrag != null && source != null && source.count > 1 && previewRoot != null && previewSlider != null) {
+            val count = source.count
+            val previewIndex = previewDrag.roundToInt().coerceIn(0, count - 1)
+            val sliderTopLeft = previewRoot.localPositionOf(previewSlider, Offset.Zero)
+            val fraction = (previewDrag / (count - 1).coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+            val centerX = sliderTopLeft.x + fraction * previewSlider.size.width
+            val density = LocalDensity.current
+            val widthPx = with(density) { PREVIEW_WIDTH.roundToPx() }
+            val heightPx = with(density) { PREVIEW_HEIGHT.roundToPx() }
+            val gapPx = with(density) { PREVIEW_GAP.roundToPx() }
+            Surface(
+                tonalElevation = 4.dp,
+                shadowElevation = 8.dp,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .offset { IntOffset((centerX - widthPx / 2f).roundToInt(), (sliderTopLeft.y - heightPx - gapPx).roundToInt()) }
+                    .width(PREVIEW_WIDTH)
+                    .height(PREVIEW_HEIGHT),
+            ) {
+                PageThumbnail(source, previewIndex)
             }
         }
         if (state.exiting) {
@@ -398,6 +446,40 @@ private val invert = ColorFilter.colorMatrix(
         ),
     ),
 )
+
+private val PREVIEW_WIDTH = 84.dp
+private val PREVIEW_HEIGHT = 120.dp
+private val PREVIEW_GAP = 12.dp
+
+/** A small, cheap render of one page for the drag-to-scrub preview bubble. */
+@Composable
+private fun PageThumbnail(source: PageSource, index: Int) {
+    when (source) {
+        is PageSource.Comic -> AsyncImage(
+            model = source.urls[index],
+            contentDescription = "Page ${index + 1}",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
+        )
+        is PageSource.Pdf -> {
+            val widthPx = with(LocalDensity.current) { PREVIEW_WIDTH.roundToPx() }
+            val bitmap by produceState<Bitmap?>(initialValue = null, source, index, widthPx) {
+                value = runCatching { source.pages.render(index, widthPx) }.getOrNull()
+            }
+            val b = bitmap
+            if (b != null) {
+                Image(
+                    bitmap = b.asImageBitmap(),
+                    contentDescription = "Page ${index + 1}",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Box(Modifier.fillMaxSize())
+            }
+        }
+    }
+}
 
 @Composable
 private fun PdfPage(pages: PdfPages, index: Int, night: Boolean) {

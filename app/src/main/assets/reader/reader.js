@@ -9,7 +9,7 @@
  * past the first page, which is what the server's READING threshold needs.
  */
 (function () {
-  var book = null, rendition = null, locationsReady = false, spineCount = 1, toc = [], lastLoc = null, pendingResize = null;
+  var book = null, rendition = null, locationsReady = false, spineCount = 1, toc = [], lastLoc = null, pendingResize = null, currentWidth = 0;
 
   /*
    * Each theme's CSS is registered under a selector scoped to that theme's
@@ -94,7 +94,14 @@
       if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
         if (dx < 0) rendition.next(); else rendition.prev();
       } else if (quick && Math.abs(dx) < 12 && Math.abs(dy) < 12) {
-        var w = contents.window.innerWidth || doc.documentElement.clientWidth || 1;
+        // currentWidth is the CSS width Kotlin actually measured and sized the
+        // rendition to (see open()/resize()) -- contents.window.innerWidth and
+        // doc.documentElement.clientWidth are the same kind of page-self-reported
+        // size already confirmed unreliable in this WebView (see open()'s own
+        // width/height comment), and used stale or wrong here could put a tap
+        // zone at the wrong fraction of the actual screen, turning a "next page"
+        // tap into a "next chapter" jump or the wrong direction entirely.
+        var w = currentWidth || contents.window.innerWidth || doc.documentElement.clientWidth || 1;
         var x = t.clientX / w;
         if (x < 0.3) rendition.prev();
         else if (x > 0.7) rendition.next();
@@ -160,6 +167,7 @@
        * reported to Android (onReady/onError are both wired up inside this
        * same call), leaving a permanently blank #viewer and no diagnostic. */
       try {
+        currentWidth = width || 0;
         book = ePub(url);
         rendition = book.renderTo('viewer', {
           width: width || '100%', height: height || '100%', flow: 'paginated',
@@ -220,6 +228,7 @@
        * size so they don't all fire back-to-back once ready, each doing its
        * own clear-and-relayout pass and visibly flashing the page. */
       var run = function () {
+        currentWidth = width;
         rendition.resize(width, height);
         rendition.spread(spreadFor(width));
         logViewerState('after-explicit-resize');

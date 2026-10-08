@@ -55,12 +55,17 @@ fun friendlyError(error: Throwable): String = when (error) {
 }
 
 /**
- * [friendlyError] for the quick-send call, where a 400 or 404 means the
- * server has no default email provider or recipient to send with.
+ * [friendlyError] for the quick-send call. The server answers 404 with a
+ * `{"status", "message"}` body both for a missing default email provider or
+ * recipient and for things unrelated to settings (a deleted book, a server
+ * without the endpoint), so only the first gets the settings advice.
  */
-fun sendErrorMessage(error: Throwable): String =
-    if (error is HttpException && (error.code() == 400 || error.code() == 404)) {
-        "Set a default email provider and eReader address in Grimmory's email settings first."
-    } else {
-        friendlyError(error)
+fun sendErrorMessage(error: Throwable): String {
+    if (error is HttpException && error.code() == 404) {
+        val body = runCatching { error.response()?.errorBody()?.string() }.getOrNull().orEmpty()
+        if (body.contains("default email", ignoreCase = true)) {
+            return "Set a default email provider and eReader address in Grimmory's email settings first."
+        }
     }
+    return friendlyError(error)
+}

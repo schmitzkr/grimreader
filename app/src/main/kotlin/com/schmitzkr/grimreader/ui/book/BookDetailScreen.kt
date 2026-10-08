@@ -82,9 +82,13 @@ import com.schmitzkr.grimreader.ui.components.LoadingState
 import com.schmitzkr.grimreader.ui.components.SectionLabel
 import com.schmitzkr.grimreader.ui.friendlyError
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val MESSAGE_FLASH_MS = 5_000L
 
 sealed interface BookUiState {
     data object Loading : BookUiState
@@ -98,7 +102,7 @@ class BookDetailViewModel @Inject constructor(
     val player: PlayerController,
     val downloads: DownloadManager,
     private val context: Context,
-    auth: AuthRepository,
+    private val auth: AuthRepository,
     savedState: SavedStateHandle,
 ) : ViewModel() {
     val user = auth.currentUser
@@ -106,27 +110,39 @@ class BookDetailViewModel @Inject constructor(
     /** True while a send is in flight; the button shows it and ignores taps. */
     val sending = MutableStateFlow(false)
 
-    /** The outcome of the last send, shown in the snackbar. */
-    val sendResult = MutableStateFlow<String?>(null)
+    /** The one message on screen (a failed open, a send's outcome), shown in the snackbar. */
+    val message = MutableStateFlow<String?>(null)
+
+    fun clearMessage() { message.value = null }
+
+    /** Shows [text] and takes it down again after a few seconds, unless something replaced it. */
+    private fun flash(text: String) {
+        message.value = text
+        viewModelScope.launch {
+            delay(MESSAGE_FLASH_MS)
+            if (message.value == text) message.value = null
+        }
+    }
 
     fun sendToEreader(book: Book) {
         if (sending.value) return
         sending.value = true
         viewModelScope.launch {
-            sendResult.value = runCatching { books.sendToEreader(book.id) }
-                .fold(
-                    onSuccess = { "Sent to your eReader address. Delivery can take a minute." },
-                    onFailure = { sendErrorMessage(it) },
-                )
-            sending.value = false
+            try {
+                books.sendToEreader(book.id)
+                flash("Queued for your eReader. Delivery can take a minute.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                message.value = sendErrorMessage(e)
+            } finally {
+                sending.value = false
+            }
         }
     }
 
-    fun clearSendResult() { sendResult.value = null }
-
     /** The file being fetched for another app, while it is. */
     val opening = MutableStateFlow<Long?>(null)
-    val openError = MutableStateFlow<String?>(null)
 
     /**
      * For a format with no reader here (MOBI, AZW3, supplementary files):
@@ -146,12 +162,10 @@ class BookDetailViewModel @Inject constructor(
                     .setDataAndType(uri, mimeTypeFor(file.extension ?: target.extension))
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 context.startActivity(Intent.createChooser(view, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            }.onFailure { openError.value = friendlyError(it) }
+            }.onFailure { message.value = friendlyError(it) }
             opening.value = null
         }
     }
-
-    fun clearOpenError() { openError.value = null }
 
     private val bookId: Long = savedState.get<Long>("id") ?: -1L
     val state = MutableStateFlow<BookUiState>(BookUiState.Loading)
@@ -165,6 +179,8 @@ class BookDetailViewModel @Inject constructor(
     fun fallbackCoverUrl(book: Book) = if (book.isAudiobook) books.fallbackCoverUrl(book) else null
 
     fun load(quiet: Boolean = false) {
+        // The Send button hangs on the user's permissions; a missed or stale fetch is retried with each page load.
+        if (!quiet) viewModelScope.launch { auth.refreshCurrentUser() }
         viewModelScope.launch {
             if (!quiet) state.value = BookUiState.Loading
             runCatching { books.book(bookId) }
@@ -209,9 +225,8 @@ fun BookDetailScreen(
         if (needsAsk) { pendingDownload = id; askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) } else vm.downloads.download(id)
     }
     val opening by vm.opening.collectAsStateWithLifecycle()
-    val openError by vm.openError.collectAsStateWithLifecycle()
+    val message by vm.message.collectAsStateWithLifecycle()
     val sending by vm.sending.collectAsStateWithLifecycle()
-    val sendResult by vm.sendResult.collectAsStateWithLifecycle()
     val user by vm.user.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize()) {
@@ -373,7 +388,8 @@ fun BookDetailScreen(
                             }
                         }
                     }
-                    // The server mails the primary file, so an audiobook with no ebook has nothing to send.
+                    // The server mails only the book's primary file, so a book whose primary
+                    // file is the audio has nothing an eReader can take, even with an EPUB alongside.
                     if (user?.permissions?.mayEmailBooks == true && !book.isAudiobook && book.files.isNotEmpty()) {
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(
@@ -457,10 +473,10 @@ fun BookDetailScreen(
             }
         }
     }
-    (openError ?: sendResult)?.let {
+    message?.let {
         Snackbar(
             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-            action = { TextButton(onClick = { vm.clearOpenError(); vm.clearSendResult() }) { Text("OK") } },
+            action = { TextButton(onClick = vm::clearMessage) { Text("OK") } },
         ) { Text(it) }
     }
     }

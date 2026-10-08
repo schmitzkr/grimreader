@@ -77,6 +77,9 @@ class PlaybackService : MediaLibraryService() {
     /** The newest position seen, for closing a session after the player has moved on. */
     private var lastSnapshot: ProgressSnapshot? = null
 
+    /** Main thread only: the book whose saved speed is being applied before its items are current. */
+    private var applyingSpeedForBookId: Long? = null
+
     override fun onCreate() {
         super.onCreate()
         val callFactory = okhttp3.Call.Factory { request -> clients.current().okHttp.newCall(request) }
@@ -207,7 +210,12 @@ class PlaybackService : MediaLibraryService() {
                 index = 0; position = progress.positionMs
             }
             val speed = settings.speedFor(bookId)
-            scope.launch { player.setPlaybackSpeed(speed) }
+            scope.launch {
+                // The new book's items are not current yet; keep the listener from
+                // saving this speed against the previous book.
+                applyingSpeedForBookId = bookId
+                try { player.setPlaybackSpeed(speed) } finally { applyingSpeedForBookId = null }
+            }
             pausedAt = null
             MediaItemsWithStartPosition(items, index, position)
         }
@@ -274,6 +282,8 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
             val bookId = player.currentMediaItem?.bookId ?: return
+            val applyingFor = applyingSpeedForBookId
+            if (applyingFor != null && applyingFor != bookId) return
             scope.launch(Dispatchers.IO) { settings.rememberSpeed(bookId, playbackParameters.speed) }
         }
 
@@ -305,10 +315,11 @@ class PlaybackService : MediaLibraryService() {
 
     private fun beginSession() {
         val s = snapshotProgress() ?: return
+        val previous = lastSnapshot
         lastSnapshot = s
         val running = sessions.current(SessionKind.AUDIO)
         if (running?.bookId == s.bookId) return
-        if (running != null) endSession(lastSnapshot)
+        if (running != null) endSession(previous?.takeIf { it.bookId == running.bookId })
         sessions.begin(SessionKind.AUDIO, s.bookId, "AUDIOBOOK", s.progress.percentage, formatClock(s.progress.positionMs))
     }
 

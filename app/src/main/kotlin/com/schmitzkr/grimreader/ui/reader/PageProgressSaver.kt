@@ -19,6 +19,12 @@ import kotlinx.coroutines.sync.withLock
  *
  * Page indices are 0-based; [pageNumberAt] maps one to the number the
  * server stores (a comic's server-listed page ids, or `index + 1` for a PDF).
+ *
+ * Same single-thread invariant as [DebouncedSaver]: [pageChanged] and
+ * [saveNow] are main-thread-only and [scope] must dispatch on Main
+ * (`viewModelScope`). The page reader has no off-main caller -- its page
+ * changes come from a `snapshotFlow` in composition -- but a new caller
+ * must hop to Main first, not add locks here.
  */
 class PageProgressSaver(
     private val scope: CoroutineScope,

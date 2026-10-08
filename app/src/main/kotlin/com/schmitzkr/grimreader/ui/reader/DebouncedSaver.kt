@@ -13,6 +13,13 @@ import kotlinx.coroutines.sync.withLock
  * collapse into one save of the newest; at most one save is on the wire
  * at a time; [saveNow] waits for one in flight so an exit save cannot be
  * overtaken by a stale one.
+ *
+ * Single-thread invariant: [pending] and [timer] are plain fields with no
+ * synchronisation, so [changed] and [saveNow] must be called from the main
+ * thread, and [scope] must dispatch there too (`viewModelScope` does:
+ * `Dispatchers.Main.immediate`), so [flush] runs on the same thread. The
+ * only off-main caller is the EPUB reader's JS bridge, which hops to Main
+ * before calling the ViewModel; keep it that way rather than adding locks here.
  */
 class DebouncedSaver<T>(
     private val scope: CoroutineScope,

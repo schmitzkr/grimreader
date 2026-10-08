@@ -264,7 +264,13 @@ fun PageReaderScreen(
     LaunchedEffect(bookId, format) { vm.start(bookId, format) }
     val state by vm.state.collectAsStateWithLifecycle()
     var chrome by remember { mutableStateOf(true) }
-    var zoomed by remember { mutableStateOf(false) }
+    // Zoom is owned per page, not by the screen: this is the index of the one
+    // page currently zoomed in (ZoomableBox reports its own state, keyed by
+    // its index below), and `zoomed` is derived from it for the *current*
+    // page only. A neighbouring page composing (the pager keeps both
+    // neighbours alive) reports false for itself, which can only clear its
+    // own claim -- it can no longer clobber the zoomed page's.
+    var zoomedPage by remember { mutableStateOf<Int?>(null) }
     // Trickplay page scrubbing: dragging the slider tracks a live target page and
     // shows a floating preview of it above the thumb, rather than jumping blind
     // until the finger lifts.
@@ -331,6 +337,9 @@ fun PageReaderScreen(
                     pager.scrollToPage(target.coerceIn(0, source.count - 1))
                     vm.jumped()
                 }
+                // Gesture rules follow the current page alone: the pager stops
+                // swiping and edge taps stop turning pages only while *it* is zoomed.
+                val zoomed = zoomedPage == pager.currentPage
                 HorizontalPager(
                     state = pager,
                     reverseLayout = state.rtl,
@@ -351,8 +360,10 @@ fun PageReaderScreen(
                                 else -> chrome = !chrome
                             }
                         },
-                        onZoomChanged = { zoomed = it },
-                        resetKey = index,
+                        onZoomChanged = { z -> zoomedPage = if (z) index else zoomedPage.takeIf { it != index } },
+                        // A page that stops being current is held back at 1× by the box
+                        // itself, so a zoomed page jumped away from (slider) reopens at fit.
+                        current = pager.currentPage == index,
                     ) {
                         when (source) {
                             is PageSource.Comic -> AsyncImage(

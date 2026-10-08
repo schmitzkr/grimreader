@@ -3,6 +3,8 @@ package com.schmitzkr.grimreader.ui.reader
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -252,8 +254,14 @@ class EpubReaderViewModel @Inject constructor(
         }.onFailure { e -> state.update { it.copy(loading = false, error = friendlyError(e)) } }
     }
 
-    /** From the page: a new location on screen. */
+    /**
+     * From the page: a new location on screen. Ignored once [exit] has begun:
+     * the exit save is the last word, and the page can still re-report its
+     * location after that (onLocationsReady re-announces the current one),
+     * which would otherwise queue a debounced save behind it.
+     */
     fun relocated(cfi: String, percentage: Double, chapter: String, pageLabel: String) {
+        if (state.value.exiting) return
         state.update { it.copy(cfi = cfi, percentage = percentage, chapter = chapter, pageLabel = pageLabel) }
         saver?.changed(EpubProgress(cfi, percentage))
         foreground()
@@ -378,13 +386,25 @@ class EpubReaderViewModel @Inject constructor(
 private fun guardedEval(js: String): String =
     "try { $js } catch (e) { window.Android && window.Android.onError('eval: ' + ((e && e.message) || e)); }"
 
-/** The page's window.Android. Calls arrive on the WebView's JS thread. */
+/**
+ * The page's window.Android. Calls arrive on the WebView's JS thread, so
+ * every one of them hops to the main thread through [onMain] before it
+ * touches anything: the ViewModel, its [DebouncedSaver] and the Compose
+ * state the tap toggles are all main-thread-only (see [DebouncedSaver]),
+ * and a relocation that ran straight on the JS thread used to race the
+ * exit save on Main. A main-looper Handler (not `View.post`) is used so
+ * the hop is unaffected by the WebView's attach state; the queue is FIFO,
+ * so relocations still land in the order the page reported them.
+ */
 private class ReaderBridge(private val vm: EpubReaderViewModel, private val tapped: () -> Unit) {
-    @JavascriptInterface fun onRelocated(cfi: String, percentage: Double, chapter: String, atEnd: Boolean, pageLabel: String) = vm.relocated(cfi, percentage, chapter, pageLabel)
-    @JavascriptInterface fun onReady(tocJson: String) = vm.ready(tocJson)
-    @JavascriptInterface fun onLocationsReady(total: Int) = vm.locationsReady(total)
-    @JavascriptInterface fun onError(message: String) = vm.pageError(message)
-    @JavascriptInterface fun onTap() = tapped()
+    private val main = Handler(Looper.getMainLooper())
+    private fun onMain(block: () -> Unit) { main.post(block) }
+
+    @JavascriptInterface fun onRelocated(cfi: String, percentage: Double, chapter: String, atEnd: Boolean, pageLabel: String) = onMain { vm.relocated(cfi, percentage, chapter, pageLabel) }
+    @JavascriptInterface fun onReady(tocJson: String) = onMain { vm.ready(tocJson) }
+    @JavascriptInterface fun onLocationsReady(total: Int) = onMain { vm.locationsReady(total) }
+    @JavascriptInterface fun onError(message: String) = onMain { vm.pageError(message) }
+    @JavascriptInterface fun onTap() = onMain(tapped)
 }
 
 /**
@@ -561,7 +581,7 @@ fun EpubReaderScreen(
                         settings.allowContentAccess = false
                         settings.domStorageEnabled = true
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        addJavascriptInterface(ReaderBridge(vm) { post { chrome = !chrome } }, "Android")
+                        addJavascriptInterface(ReaderBridge(vm) { chrome = !chrome }, "Android")
                         webViewClient = object : WebViewClient() {
                             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                                 loader.shouldInterceptRequest(request.url)

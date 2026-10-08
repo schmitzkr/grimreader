@@ -47,4 +47,10 @@ class TimelineTest {
         assertEquals(100.0, pagePercentage(99, 30), 0.0)
         assertEquals(0.0, pagePercentage(0, 0), 0.0)
     }
+
+    @Test
+    fun `an unknown track duration does not turn a skip into a seek to zero`() {
+        assertEquals(SkipTarget(0, 630_000), skipTarget(0, 600_000, 30_000, listOf(0L)))
+        assertEquals(SkipTarget(0, 570_000), skipTarget(0, 600_000, -30_000, listOf(0L)))
+    }
 }

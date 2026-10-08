@@ -1,7 +1,9 @@
 package com.schmitzkr.grimreader.core.stats
 
 import kotlinx.serialization.Serializable
+import com.schmitzkr.grimreader.core.model.parseServerInstant
 import java.time.LocalDate
+import java.time.ZoneOffset
 import java.time.temporal.WeekFields
 
 // ── Server shapes ────────────────────────────────────────────────────────
@@ -99,9 +101,17 @@ fun monthMinutes(days: List<ListeningDay>, today: LocalDate): Long {
  * column lines up.
  */
 fun streakColumns(days: List<StreakDay>): List<List<StreakDay?>> {
-    if (days.isEmpty()) return emptyList()
-    val sorted = days.sortedBy { it.date }
-    val firstDow = LocalDate.parse(sorted.first().date).dayOfWeek.value // Monday = 1
-    val padded: List<StreakDay?> = List(firstDow - 1) { null } + sorted
+    // Tolerate `2026-10-08T00:00:00`-style dates and skip any that do not parse.
+    val byDay = sortedMapOf<LocalDate, StreakDay>()
+    days.forEach { d ->
+        parseServerInstant(d.date)?.atZone(ZoneOffset.UTC)?.toLocalDate()?.let { byDay[it] = d }
+    }
+    if (byDay.isEmpty()) return emptyList()
+    val first = byDay.firstKey()
+    val last = byDay.lastKey()
+    // Walk the full range so a day the server omitted keeps its weekday row.
+    val grid = generateSequence(first) { it.plusDays(1) }.takeWhile { !it.isAfter(last) }
+        .map { date -> byDay[date] ?: StreakDay(date.toString(), false) }.toList()
+    val padded: List<StreakDay?> = List(first.dayOfWeek.value - 1) { null } + grid // Monday = 1
     return padded.chunked(7).map { col -> if (col.size < 7) col + List(7 - col.size) { null } else col }
 }

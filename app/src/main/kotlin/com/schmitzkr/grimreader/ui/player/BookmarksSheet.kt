@@ -56,7 +56,7 @@ class BookmarksViewModel @Inject constructor(private val books: BooksRepository)
         this.bookId = bookId
         viewModelScope.launch {
             runCatching { books.bookmarks(bookId) }
-                .onSuccess { bookmarks.value = it.sortedBy { b -> b.positionMs ?: 0 } }
+                .onSuccess { error.value = null; bookmarks.value = it.sortedBy { b -> b.positionMs ?: 0 } }
                 .onFailure { error.value = friendlyError(it) }
         }
     }

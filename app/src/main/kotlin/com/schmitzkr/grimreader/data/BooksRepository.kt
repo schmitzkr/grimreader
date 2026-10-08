@@ -32,15 +32,14 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import java.io.IOException
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -247,23 +246,15 @@ class BooksRepository @Inject constructor(
     /**
      * Streams a book file to [target] (through a temp file, so a half
      * download never looks complete). [fileId] null means the primary file.
+     * Cancelling the caller stops the transfer at once; a reader's cache
+     * file has no other writer, so its temp file is dropped here too.
      */
     suspend fun downloadToFile(book: Book, fileId: Long?, target: File) {
-        val additional = book.downloadFileId(fileId)
-        val response = if (additional == null) api.downloadBook(book.id) else api.downloadBookFile(book.id, additional)
-        if (!response.isSuccessful) throw HttpException(response)
-        val body = response.body() ?: error("Empty download")
-        val temp = File(target.parentFile, "${target.name}.part")
-        withContext(Dispatchers.IO) {
-            try {
-                body.use { b ->
-                    b.byteStream().use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
-                }
-                if (!temp.renameTo(target)) error("Could not move the downloaded file into place")
-            } catch (e: Throwable) {
-                temp.delete()
-                throw e
-            }
+        try {
+            client().downloadToFile(downloadUrl(book, fileId), target)
+        } catch (e: CancellationException) {
+            GrimmoryClient.partFile(target).delete()
+            throw e
         }
     }
 

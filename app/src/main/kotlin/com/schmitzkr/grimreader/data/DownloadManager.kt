@@ -7,18 +7,22 @@ import com.schmitzkr.grimreader.core.model.Book
 import com.schmitzkr.grimreader.ui.friendlyError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.Request
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -72,7 +76,17 @@ class DownloadManager @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    private val jobs = mutableMapOf<Long, Job>()
+
+    /**
+     * The one live transfer per book, touched from Main ([download], [cancel])
+     * and IO (a job's own `finally`), hence concurrent. Each attempt is its own
+     * [Job], and the entry here is that job's claim on the book: a job only
+     * ever removes *itself* (`remove(key, value)`) and only writes the book's
+     * [state] while it is still the registered job, so a retry started after
+     * a cancel can never have its handle or its progress clobbered by the
+     * attempt it replaced, however long that one takes to wind down.
+     */
+    private val jobs = ConcurrentHashMap<Long, Job>()
     private val root: File get() = File(context.filesDir, "downloads")
 
     private val _state = MutableStateFlow<Map<Long, DownloadState>>(emptyMap())
@@ -125,17 +139,31 @@ class DownloadManager @Inject constructor(
     fun download(bookId: Long) {
         val current = _state.value[bookId]
         if (current?.isActive == true || current?.isDone == true) return
+        // Registered before it starts, so the job's own `finally` always finds
+        // its entry; and before the state entry, so a job's owner check (see
+        // [jobs]) is never satisfied by a stale registration.
+        val job = scope.launch(start = CoroutineStart.LAZY) { run(bookId) }
+        jobs[bookId] = job
         _state.update { it + (bookId to DownloadState(bookId, current?.title ?: "Book $bookId", current?.author ?: "", DownloadStatus.QUEUED)) }
-        jobs[bookId] = scope.launch { run(bookId) }
+        job.start()
         DownloadService.start(context)
     }
 
+    /**
+     * Stops a transfer and drops the book. The job's claim is released first,
+     * then its coroutine cancelled -- which cancels the OkHttp call outright
+     * (see `GrimmoryClient.downloadToFile`), so it stops writing within one
+     * buffer rather than running to the end of the current file.
+     */
     fun cancel(bookId: Long) {
         val job = jobs.remove(bookId)
         job?.cancel()
         _state.update { it - bookId }
         // Rename (cheap) so a re-download can start clean at once, then delete the
-        // tree off the caller's thread once the cancelled transfer has stopped writing.
+        // tree off the caller's thread once the cancelled transfer has stopped
+        // writing. That sweep is what removes a cancelled job's `.part`: the
+        // transfer deliberately leaves it, since by then its path may already
+        // name a file of the retry's in the recreated directory.
         val d = dir(bookId)
         val doomed = File(root, "$bookId.deleting-${System.nanoTime()}")
         val target = if (d.exists() && d.renameTo(doomed)) doomed else d
@@ -147,13 +175,29 @@ class DownloadManager @Inject constructor(
 
     fun remove(bookId: Long) = cancel(bookId)
 
+    /** Changes [bookId]'s entry only while [job] still owns it; a replaced job's late writes are dropped. */
+    private fun updateOwned(bookId: Long, job: Job, transform: (DownloadState) -> DownloadState) {
+        _state.update { s ->
+            val d = s[bookId]
+            if (d == null || jobs[bookId] !== job) s else s + (bookId to transform(d))
+        }
+    }
+
     private suspend fun run(bookId: Long) {
+        val job = currentCoroutineContext().job
         val dir = dir(bookId).apply { mkdirs() }
         try {
             val book = books.book(bookId)
             val kind = kindOf(book) ?: error("This book has nothing the app can keep offline")
-            _state.update { it + (bookId to DownloadState(bookId, book.title, book.authors.joinToString(", "), DownloadStatus.DOWNLOADING)) }
-            runCatching { fetch(books.coverUrl(book), File(dir, COVER)) {} }
+            val author = book.authors.joinToString(", ")
+            updateOwned(bookId, job) { it.copy(title = book.title, author = author, status = DownloadStatus.DOWNLOADING) }
+            try {
+                fetch(books.coverUrl(book), File(dir, COVER)) {}
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.d(TAG, "No cover for $bookId", e)
+            }
             var info: AudiobookInfo? = null
             var fileId: Long? = null
             var pages: List<Int> = emptyList()
@@ -182,48 +226,34 @@ class DownloadManager @Inject constructor(
                 // existing one is a finished piece of an interrupted download.
                 bytes += if (target.isFile && target.length() > 0) target.length()
                 else fetch(url, target) { partial ->
-                    _state.update { s -> s[bookId]?.let { d -> s + (bookId to d.copy(fraction = (i + partial) / targets.size)) } ?: s }
+                    updateOwned(bookId, job) { it.copy(fraction = (i + partial) / targets.size) }
                 }
-                _state.update { s -> s[bookId]?.let { d -> s + (bookId to d.copy(fraction = (i + 1f) / targets.size)) } ?: s }
+                updateOwned(bookId, job) { it.copy(fraction = (i + 1f) / targets.size) }
             }
+            // A cancel landing after the last file must not leave a record that
+            // claims the (now doomed, or already replaced) directory is complete.
+            currentCoroutineContext().ensureActive()
             val record = DownloadRecord(book, info, targets.map { it.second }, bytes, System.currentTimeMillis(), kind, fileId, pages)
             File(dir, RECORD).writeText(json.encodeToString(DownloadRecord.serializer(), record))
-            _state.update { it + (bookId to DownloadState(bookId, book.title, book.authors.joinToString(", "), DownloadStatus.DONE, 1f, bytes)) }
+            updateOwned(bookId, job) { it.copy(title = book.title, author = author, status = DownloadStatus.DONE, fraction = 1f, bytes = bytes) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Download failed", e)
-            _state.update { s -> s[bookId]?.let { d -> s + (bookId to d.copy(status = DownloadStatus.FAILED, error = friendlyError(e))) } ?: s }
+            updateOwned(bookId, job) { it.copy(status = DownloadStatus.FAILED, error = friendlyError(e)) }
         } finally {
-            jobs.remove(bookId)
+            // Only this attempt's own claim: a retry registered since stays put.
+            jobs.remove(bookId, job)
         }
     }
 
-    /** Streams [url] to [target] through a temp file; returns the bytes written. */
-    private fun fetch(url: String, target: File, onProgress: (Float) -> Unit): Long {
-        val call = clients.current().okHttp.newCall(Request.Builder().url(url).build())
-        call.execute().use { response ->
-            if (!response.isSuccessful) throw java.io.IOException("Server said ${response.code}")
-            val body = response.body ?: throw java.io.IOException("Empty response")
-            val total = body.contentLength()
-            val temp = File(target.parentFile, "${target.name}.part")
-            var written = 0L
-            body.byteStream().use { input ->
-                temp.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val n = input.read(buffer)
-                        if (n < 0) break
-                        output.write(buffer, 0, n)
-                        written += n
-                        if (total > 0) onProgress((written.toFloat() / total).coerceIn(0f, 1f))
-                    }
-                }
-            }
-            if (!temp.renameTo(target)) throw java.io.IOException("Could not move the file into place")
-            return written
-        }
-    }
+    /**
+     * Streams [url] to [target] through a temp file; returns the bytes
+     * written. Cancellable: the client cancels the call and stops the copy
+     * within one buffer when this coroutine is cancelled.
+     */
+    private suspend fun fetch(url: String, target: File, onProgress: (Float) -> Unit): Long =
+        clients.current().downloadToFile(url, target, onProgress)
 
     /** Finished downloads reappear from disk; a directory without a record is a torn download. */
     private fun scan() {

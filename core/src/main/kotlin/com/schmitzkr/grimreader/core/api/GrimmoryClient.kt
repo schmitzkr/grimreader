@@ -1,9 +1,19 @@
 package com.schmitzkr.grimreader.core.api
 
 import com.schmitzkr.grimreader.core.model.AuthTokens
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.Authenticator
 import okhttp3.Interceptor
@@ -13,8 +23,11 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.Route
+import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.io.File
+import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 
@@ -168,6 +181,87 @@ class GrimmoryClient(
     fun downloadUrl(bookId: Long, fileId: Long?): String =
         if (fileId == null) "${apiBase}books/$bookId/download" else "${apiBase}books/$bookId/files/$fileId/download"
 
+    // ── File transfer ─────────────────────────────────────────────────────
+
+    /**
+     * Streams [url] into [target] by way of [partFile], which is renamed into
+     * place only once every byte is there, so a half transfer never looks
+     * complete. Returns the bytes written; [onProgress] gets the fraction
+     * done whenever the server sent a length.
+     *
+     * Cancelling the calling coroutine really stops the transfer: the OkHttp
+     * call is cancelled (the one thing that unblocks a socket read, which
+     * never notices a thread interrupt) and the copy loop re-checks the job
+     * before every buffer, so no more than one buffer is written after the
+     * cancel, and the cancel surfaces as a [CancellationException] rather
+     * than OkHttp's "Canceled" [IOException].
+     *
+     * A transfer that fails deletes its part file. A cancelled one leaves it
+     * to the caller, who may have moved or recreated the parent directory in
+     * the meantime (a download manager replacing a cancelled book does) --
+     * deleting by path then could hit a successor's file of the same name.
+     * A non-2xx answer throws [HttpException] with up to 64 KiB of the body.
+     */
+    suspend fun downloadToFile(url: String, target: File, onProgress: (Float) -> Unit = {}): Long =
+        withCall(Request.Builder().url(url).build()) { response ->
+            if (!response.isSuccessful) {
+                throw HttpException(retrofit2.Response.error<Unit>(response.peekBody(ERROR_BODY_LIMIT), response))
+            }
+            val body = response.body ?: throw IOException("Empty response")
+            val total = body.contentLength()
+            val temp = partFile(target)
+            var written = 0L
+            try {
+                body.byteStream().use { input ->
+                    temp.outputStream().use { output ->
+                        val buffer = ByteArray(COPY_BUFFER)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            output.write(buffer, 0, n)
+                            written += n
+                            if (total > 0) onProgress((written.toFloat() / total).coerceIn(0f, 1f))
+                        }
+                    }
+                }
+                if (!temp.renameTo(target)) throw IOException("Could not move the file into place")
+            } catch (e: Throwable) {
+                if (currentCoroutineContext().isActive) temp.delete()
+                throw e
+            }
+            written
+        }
+
+    /**
+     * Runs [block] on IO with the response to [request], tying the OkHttp
+     * call's life to the calling coroutine's: a watcher cancels the call the
+     * moment the job is cancelled, whether the call is still connecting or
+     * mid-body. OkHttp then fails the blocked read with an IOException,
+     * which is re-thrown as the cancellation it really is.
+     */
+    private suspend fun <T> withCall(request: Request, block: suspend (Response) -> T): T = coroutineScope {
+        val call = okHttp.newCall(request)
+        val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                awaitCancellation()
+            } finally {
+                // A no-op once the call has completed normally.
+                call.cancel()
+            }
+        }
+        try {
+            withContext(Dispatchers.IO) { call.execute().use { block(it) } }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            currentCoroutineContext().ensureActive()
+            throw e
+        } finally {
+            watcher.cancel()
+        }
+    }
+
     /** Stores a fresh login or refresh result. */
     fun storeTokens(tokens: AuthTokens) {
         store.replace(tokens.toSession())
@@ -203,6 +297,14 @@ class GrimmoryClient(
         refreshToken = refreshToken,
         expiresAt = expires?.let { Instant.now().plusSeconds(it) },
     )
+
+    companion object {
+        private const val COPY_BUFFER = 64 * 1024
+        private const val ERROR_BODY_LIMIT = 64L * 1024
+
+        /** Where [downloadToFile] writes before renaming into [target]: `<target>.part` beside it. */
+        fun partFile(target: File): File = File(target.parentFile, "${target.name}.part")
+    }
 }
 
 /**

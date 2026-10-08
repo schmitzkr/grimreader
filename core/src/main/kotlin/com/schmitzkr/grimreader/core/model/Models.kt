@@ -34,7 +34,8 @@ data class Library(
 @Serializable
 data class Book(
     val id: Long,
-    val title: String,
+    /** Missing for some orphaned/incompletely-scanned books; the server still lists them. */
+    val title: String = "",
     val thumbnailUrl: String? = null,
     val coverUpdatedOn: String? = null,
     val audiobookCoverUpdatedOn: String? = null,

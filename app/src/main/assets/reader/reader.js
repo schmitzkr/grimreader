@@ -9,7 +9,7 @@
  * past the first page, which is what the server's READING threshold needs.
  */
 (function () {
-  var book = null, rendition = null, locationsReady = false, spineCount = 1, toc = [], lastLoc = null;
+  var book = null, rendition = null, locationsReady = false, spineCount = 1, toc = [], lastLoc = null, pendingResize = null, currentWidth = 0;
 
   /*
    * Each theme's CSS is registered under a selector scoped to that theme's
@@ -75,9 +75,8 @@
     return '';
   }
 
-  function chapterFor(loc) {
-    var href = loc.start.href || '';
-    var base = href.split('#')[0];
+  function chapterForHref(href) {
+    var base = (href || '').split('#')[0];
     var found = '';
     toc.forEach(function (t) {
       var th = t.href.split('#')[0];
@@ -85,6 +84,8 @@
     });
     return found;
   }
+
+  function chapterFor(loc) { return chapterForHref(loc.start.href); }
 
   function relocated(loc) {
     lastLoc = loc;
@@ -133,7 +134,14 @@
       if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
         if (dx < 0) rendition.next(); else goPrev();
       } else if (quick && Math.abs(dx) < 12 && Math.abs(dy) < 12) {
-        var w = contents.window.innerWidth || doc.documentElement.clientWidth || 1;
+        // currentWidth is the CSS width Kotlin actually measured and sized the
+        // rendition to (see open()/resize()) -- contents.window.innerWidth and
+        // doc.documentElement.clientWidth are the same kind of page-self-reported
+        // size already confirmed unreliable in this WebView (see open()'s own
+        // width/height comment), and used stale or wrong here could put a tap
+        // zone at the wrong fraction of the actual screen, turning a "next page"
+        // tap into a "next chapter" jump or the wrong direction entirely.
+        var w = currentWidth || contents.window.innerWidth || doc.documentElement.clientWidth || 1;
         var x = t.clientX / w;
         if (x < 0.3) goPrev();
         else if (x > 0.7) rendition.next();
@@ -199,6 +207,7 @@
        * reported to Android (onReady/onError are both wired up inside this
        * same call), leaving a permanently blank #viewer and no diagnostic. */
       try {
+        currentWidth = width || 0;
         book = ePub(url);
         rendition = book.renderTo('viewer', {
           width: width || '100%', height: height || '100%', flow: 'paginated',
@@ -228,6 +237,11 @@
           return book.locations.generate(1024);
         }).then(function () {
           locationsReady = true;
+          /* One-time: lets Kotlin turn a percentage into a "page" (epub.js's own
+           * ~1024-character locations, the same stand-in for print pages Kindle-
+           * style readers use for reflowable text) without a page round trip on
+           * every drag frame of the position slider. */
+          report('onLocationsReady', book.locations.total + 1);
           if (lastLoc) relocated(lastLoc);
         }).catch(fail);
         var first = cfi ? rendition.display(cfi).catch(function () { return rendition.display(); }) : rendition.display();
@@ -244,9 +258,29 @@
      * are CSS px, same units open() takes. */
     resize: function (width, height) {
       if (!rendition) return;
-      rendition.resize(width, height);
-      rendition.spread(spreadFor(width));
-      logViewerState('after-explicit-resize');
+      /* rendition.manager is set up asynchronously (queued in the Rendition
+       * constructor, not ready the instant renderTo() returns) -- calling
+       * resize() before it exists threw "Cannot read properties of
+       * undefined (reading 'resize')" from inside epub.js itself. rendition
+       * .started resolves once that setup has actually run. Several resize
+       * calls can pile up before that (the WebView's initial layout settles
+       * in more than one pass); pendingResize keeps only the last requested
+       * size so they don't all fire back-to-back once ready, each doing its
+       * own clear-and-relayout pass and visibly flashing the page. */
+      var run = function () {
+        currentWidth = width;
+        rendition.resize(width, height);
+        rendition.spread(spreadFor(width));
+        logViewerState('after-explicit-resize');
+      };
+      if (rendition.manager) { run(); return; }
+      pendingResize = { width: width, height: height };
+      rendition.started.then(function () {
+        if (pendingResize && pendingResize.width === width && pendingResize.height === height) {
+          pendingResize = null;
+          run();
+        }
+      }).catch(fail);
     },
     next: function () { if (rendition) rendition.next(); },
     prev: function () { goPrev(); },

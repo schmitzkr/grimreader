@@ -27,6 +27,16 @@ layer, playback service).
   the typed field alone for dual-format books.
 - The `continue-*` endpoints return nothing for admins; Continue rows are
   built from the filtered list endpoint (see `BooksRepository`).
+- **Session lifecycle is owned by `AuthRepository`**: it alone decides what
+  a sign-out, a server change or an expiry means. `SessionEvents.expired`
+  is state (a `StateFlow<Boolean>`), not a one-shot event, set only by a
+  refresh the server rejects while a session was present and cleared by
+  the next stored session or a deliberate sign-out; a 401 to a bearer-less
+  request is never an expiry. `PersistedSessionStore` persists through one
+  ordered queue (`flush()` awaits it). Device-local state that belongs to
+  one account on one server (progress store, queued reading sessions,
+  downloads) is dropped by `AuthRepository.forgetDeviceState()` on sign-out
+  and server change, and the stores refuse new entries while signed out.
 - **EPUB reader (`ui/reader/EpubReaderScreen.kt` + `assets/reader/`)**:
   epub.js runs inside a `WebView` hosted in a Compose `AndroidView`; Kotlin
   and the page talk over a `window.Android` JS bridge (`ReaderBridge`).

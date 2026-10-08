@@ -104,7 +104,7 @@ class PlaybackService : MediaLibraryService() {
         )
         session = MediaLibrarySession.Builder(this, player, LibraryCallback())
             .setSessionActivity(openApp)
-            .setBitmapLoader(AuthBitmapLoader(this, callFactory))
+            .setBitmapLoader(AuthBitmapLoader(this, clients))
             .build()
     }
 

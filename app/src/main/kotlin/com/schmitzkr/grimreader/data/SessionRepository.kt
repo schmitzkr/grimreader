@@ -62,9 +62,18 @@ class SessionRepository @Inject constructor(
     fun end(kind: SessionKind, progress: Double, location: String?) {
         val a = active.remove(kind) ?: return
         val session = a.finish(Instant.now(), SystemClock.elapsedRealtime(), progress, location) ?: return
+        // A reader closing after a sign-out: the post would fail and the
+        // session would sit queued for the next account.
+        if (auth.state.value !is AppState.SignedIn) return
         scope.launch {
             if (post(session)) retryPending() else enqueue(session)
         }
+    }
+
+    /** Drops the running and the queued sessions; for a sign-out or server change. */
+    suspend fun clear() {
+        active.clear()
+        retryLock.withLock { writePending(emptyList()) }
     }
 
     private suspend fun post(session: ReadingSession): Boolean = runCatching {

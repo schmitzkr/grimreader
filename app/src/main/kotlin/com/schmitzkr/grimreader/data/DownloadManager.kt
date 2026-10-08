@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Request
@@ -236,6 +237,21 @@ class DownloadManager @Inject constructor(
     }
 
     private fun dir(bookId: Long) = File(root, bookId.toString())
+
+    /**
+     * Forgets every download, files and all. For a sign-out or server
+     * change: book ids belong to one server and library access to one
+     * account, so nothing here means anything to the next one. The files
+     * go before the state does, so a transfer still writing either
+     * finished before its directory vanished (and is cleared with the
+     * rest) or fails afterwards and finds no state entry left to mark.
+     */
+    suspend fun removeAll() {
+        jobs.values.toList().forEach { it.cancel() }
+        withContext(Dispatchers.IO) { root.deleteRecursively() }
+        _state.value = emptyMap()
+        jobs.clear()
+    }
 
     companion object {
         private const val TAG = "Downloads"

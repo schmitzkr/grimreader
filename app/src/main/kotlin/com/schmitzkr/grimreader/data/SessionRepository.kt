@@ -2,9 +2,12 @@ package com.schmitzkr.grimreader.data
 
 import android.os.SystemClock
 import android.util.Log
+import com.schmitzkr.grimreader.core.api.SaveOutcome
+import com.schmitzkr.grimreader.core.api.saveOutcome
 import com.schmitzkr.grimreader.core.sessions.ActiveSession
 import com.schmitzkr.grimreader.core.sessions.ReadingSession
 import com.schmitzkr.grimreader.core.sessions.finish
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,9 +28,10 @@ enum class SessionKind { AUDIO, READER }
 
 /**
  * Records stretches of reading and listening for the server's stats
- * pages. One session per kind runs at a time; a session that fails to
- * post is queued on the device and retried at launch, at sign-in and
- * after the next successful post.
+ * pages. One session per kind runs at a time; a session the server could
+ * not answer for is queued on the device and retried at launch, at sign-in
+ * and after the next successful post. One it refuses outright (see
+ * [saveOutcome]) is dropped, so a poison entry never re-posts on every launch.
  */
 @Singleton
 class SessionRepository @Inject constructor(
@@ -62,27 +66,48 @@ class SessionRepository @Inject constructor(
     fun end(kind: SessionKind, progress: Double, location: String?) {
         val a = active.remove(kind) ?: return
         val session = a.finish(Instant.now(), SystemClock.elapsedRealtime(), progress, location) ?: return
+        // A reader closing after a sign-out: the post would fail and the
+        // session would sit queued for the next account.
+        if (auth.state.value !is AppState.SignedIn) return
         scope.launch {
-            if (post(session)) retryPending() else enqueue(session)
+            when (post(session)) {
+                SaveOutcome.ACCEPTED -> retryPending()
+                SaveOutcome.RETRY -> enqueue(session)
+                SaveOutcome.REJECTED -> Unit
+            }
         }
     }
 
-    private suspend fun post(session: ReadingSession): Boolean = runCatching {
+    /** Drops the running and the queued sessions; for a sign-out or server change. */
+    suspend fun clear() {
+        active.clear()
+        retryLock.withLock { writePending(emptyList()) }
+    }
+
+    /** Posts one session; a transport failure counts as a retry, never as an answer. */
+    private suspend fun post(session: ReadingSession): SaveOutcome = try {
         val body = json.encodeToJsonElement(ReadingSession.serializer(), session).jsonObject
-        clients.current().api.createReadingSession(body).isSuccessful
-    }.onFailure { Log.w(TAG, "Session post failed", it) }.getOrDefault(false)
+        saveOutcome(clients.current().api.createReadingSession(body).code()).also {
+            if (it == SaveOutcome.REJECTED) Log.w(TAG, "Session for book ${session.bookId} refused by the server, dropped")
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "Session post failed", e)
+        SaveOutcome.RETRY
+    }
 
     private suspend fun enqueue(session: ReadingSession) = retryLock.withLock {
         val pending = readPending() + session
         writePending(pending.takeLast(MAX_PENDING))
     }
 
-    /** Posts every queued session in order; the ones that still fail stay queued. */
+    /** Posts every queued session in order; the ones the server could not answer for stay queued. */
     suspend fun retryPending() = retryLock.withLock {
         val pending = readPending()
         if (pending.isEmpty()) return@withLock
         if (!clients.isConfigured) return@withLock
-        val stillPending = pending.filterNot { post(it) }
+        val stillPending = pending.filter { post(it) == SaveOutcome.RETRY }
         writePending(stillPending)
     }
 

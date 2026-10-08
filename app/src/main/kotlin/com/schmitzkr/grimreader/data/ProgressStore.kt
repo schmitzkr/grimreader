@@ -3,7 +3,10 @@ package com.schmitzkr.grimreader.data
 import android.content.Context
 import android.util.Log
 import com.schmitzkr.grimreader.core.api.LocalProgress
+import com.schmitzkr.grimreader.core.api.SaveOutcome
 import com.schmitzkr.grimreader.core.api.progressKey
+import com.schmitzkr.grimreader.core.api.saveOutcome
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,8 +26,11 @@ import javax.inject.Singleton
 /**
  * Every position the app has saved or loaded, one per book and kind, in
  * a small JSON file. A save lands here first and stays [LocalProgress.pending]
- * until the server accepts it; pending saves are pushed again at launch and
- * sign-in, after each successful save, and on every load.
+ * until the server answers for it; pending saves are pushed again at launch
+ * and sign-in, after each successful save, and on every load. A save the
+ * server refuses outright (see [saveOutcome]) is settled too, so it is never
+ * sent again and no longer beats the server's copy; it only stands in for
+ * an offline open until the next load or save replaces it.
  */
 @Singleton
 class ProgressStore @Inject constructor(
@@ -48,11 +54,21 @@ class ProgressStore @Inject constructor(
     suspend fun get(kind: String, bookId: Long): LocalProgress? = lock.withLock { entries()[progressKey(kind, bookId)] }
 
     suspend fun put(kind: String, bookId: Long, body: JsonObject, pending: Boolean) = lock.withLock {
+        // A reader or the player closing after a sign-out still saves once;
+        // nothing of that account may land here for the next one.
+        if (auth.state.value !is AppState.SignedIn) return@withLock
         entries()[progressKey(kind, bookId)] = LocalProgress(bookId, kind, body, System.currentTimeMillis(), pending)
         persist()
     }
 
-    private suspend fun markSynced(kind: String, bookId: Long, body: JsonObject) = lock.withLock {
+    /** Drops every saved and remembered position; for a sign-out or server change. */
+    suspend fun clear() = lock.withLock {
+        entries().clear()
+        persist()
+    }
+
+    /** Ends the pending state of [body] once the server has answered for it, accepted or refused. */
+    private suspend fun settle(kind: String, bookId: Long, body: JsonObject) = lock.withLock {
         val key = progressKey(kind, bookId)
         val current = entries()[key] ?: return@withLock
         // A newer pending save may have landed meanwhile; leave that one pending.
@@ -62,17 +78,26 @@ class ProgressStore @Inject constructor(
         }
     }
 
-    /** Pushes every pending save; the ones that still fail stay pending. */
+    /** Sends one body; a transport failure counts as a retry, never as an answer. */
+    private suspend fun push(bookId: Long, body: JsonObject): SaveOutcome = try {
+        saveOutcome(clients.current().api.updateProgress(bookId, body).code()).also {
+            if (it == SaveOutcome.REJECTED) Log.w(TAG, "Progress save for book $bookId refused by the server, not retried")
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "Progress save failed, kept pending", e)
+        SaveOutcome.RETRY
+    }
+
+    /** Pushes every pending save; the ones the server could not answer stay pending. */
     suspend fun retryPending() {
         if (!clients.isConfigured) return
         if (!syncLock.tryLock()) return
         try {
             val pending = lock.withLock { entries().values.filter { it.pending } }
             for (p in pending) {
-                val ok = runCatching { clients.current().api.updateProgress(p.bookId, p.body).isSuccessful }
-                    .onFailure { Log.w(TAG, "Progress retry failed", it) }
-                    .getOrDefault(false)
-                if (ok) markSynced(p.kind, p.bookId, p.body)
+                if (push(p.bookId, p.body) != SaveOutcome.RETRY) settle(p.kind, p.bookId, p.body)
             }
         } finally {
             syncLock.unlock()
@@ -84,26 +109,30 @@ class ProgressStore @Inject constructor(
     }
 
     /**
-     * Local first: the body is stored pending, sent, and marked synced on
-     * success. Returns whether the server took it.
+     * Local first: the body is stored pending, sent, and settled once the
+     * server answers. Returns whether the server took it.
      */
     suspend fun save(kind: String, bookId: Long, body: JsonObject): Boolean {
         put(kind, bookId, body, pending = true)
-        val ok = runCatching { clients.current().api.updateProgress(bookId, body).isSuccessful }
-            .onFailure { Log.w(TAG, "Progress save failed, kept pending", it) }
-            .getOrDefault(false)
-        if (ok) {
-            markSynced(kind, bookId, body)
-            retryPendingLater()
-        }
-        return ok
+        val outcome = push(bookId, body)
+        if (outcome != SaveOutcome.RETRY) settle(kind, bookId, body)
+        if (outcome == SaveOutcome.ACCEPTED) retryPendingLater()
+        return outcome == SaveOutcome.ACCEPTED
     }
 
-    /** Remembers what the server said so a later offline load has something to open at. */
-    suspend fun remember(kind: String, bookId: Long, serverBody: JsonObject) {
+    /**
+     * Remembers what the server said so a later offline load has something
+     * to open at; null means the server has no position, so the remembered
+     * one goes too. A pending save is left alone either way.
+     */
+    suspend fun remember(kind: String, bookId: Long, serverBody: JsonObject?) {
         val current = get(kind, bookId)
         if (current?.pending == true) return
-        put(kind, bookId, serverBody, pending = false)
+        if (serverBody != null) put(kind, bookId, serverBody, pending = false) else forget(kind, bookId)
+    }
+
+    private suspend fun forget(kind: String, bookId: Long) = lock.withLock {
+        if (entries().remove(progressKey(kind, bookId)) != null) persist()
     }
 
     private suspend fun entries(): MutableMap<String, LocalProgress> {

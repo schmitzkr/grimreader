@@ -261,11 +261,14 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                         },
                     ) { vm.checkForUpdates() }
                     HorizontalDivider()
-                    Item(
-                        "GrimReader",
-                        "GPL-3.0-only · github.com/${UpdateRepository.REPO}",
-                        onClick = { openInBrowser(context, Uri.parse("https://github.com/${UpdateRepository.REPO}")) },
-                        art = true,
+                    ListItem(
+                        headlineContent = { Text("GrimReader") },
+                        supportingContent = { Text("GPL-3.0-only · github.com/${UpdateRepository.REPO}") },
+                        leadingContent = { ReaperArt(40.dp) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.clickable {
+                            openInBrowser(context, Uri.parse("https://github.com/${UpdateRepository.REPO}"))
+                        },
                     )
                     HorizontalDivider()
                     Item(
@@ -341,9 +344,8 @@ private fun newIssueUrl(): Uri {
 }
 
 @Composable
-private fun Item(title: String, subtitle: String, onClick: (() -> Unit)? = null, art: Boolean = false) {
+private fun Item(title: String, subtitle: String, onClick: (() -> Unit)? = null) {
     ListItem(
-        leadingContent = if (art) ({ ReaperArt(40.dp) }) else null,
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),

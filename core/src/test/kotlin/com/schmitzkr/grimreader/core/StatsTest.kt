@@ -66,4 +66,23 @@ class StatsTest {
         assertEquals(7, columns[1].size)
         assertEquals("2026-09-07", columns[1][0]!!.date)
     }
+
+    @Test
+    fun `a gap in the day list keeps later days on their weekday row`() {
+        // 2026-09-07 is a Monday; the server omitted Tuesday the 8th.
+        val days = listOf(StreakDay("2026-09-07", true), StreakDay("2026-09-09", true))
+        val col = streakColumns(days).single()
+        assertEquals("2026-09-07", col[0]!!.date)
+        assertEquals("2026-09-08", col[1]!!.date)
+        assertEquals("2026-09-09", col[2]!!.date)
+    }
+
+    @Test
+    fun `datetime and unparseable dates do not crash the grid`() {
+        val days = listOf(StreakDay("2026-09-07T00:00:00", true), StreakDay("not a date", true), StreakDay("2026-09-08", false))
+        val col = streakColumns(days).single()
+        assertEquals("2026-09-07T00:00:00", col[0]!!.date)
+        assertEquals("2026-09-08", col[1]!!.date)
+        assertEquals(emptyList<List<StreakDay?>>(), streakColumns(listOf(StreakDay("nope"))))
+    }
 }

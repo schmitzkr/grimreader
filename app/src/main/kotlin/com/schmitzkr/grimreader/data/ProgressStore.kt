@@ -54,7 +54,16 @@ class ProgressStore @Inject constructor(
     suspend fun get(kind: String, bookId: Long): LocalProgress? = lock.withLock { entries()[progressKey(kind, bookId)] }
 
     suspend fun put(kind: String, bookId: Long, body: JsonObject, pending: Boolean) = lock.withLock {
+        // A reader or the player closing after a sign-out still saves once;
+        // nothing of that account may land here for the next one.
+        if (auth.state.value !is AppState.SignedIn) return@withLock
         entries()[progressKey(kind, bookId)] = LocalProgress(bookId, kind, body, System.currentTimeMillis(), pending)
+        persist()
+    }
+
+    /** Drops every saved and remembered position; for a sign-out or server change. */
+    suspend fun clear() = lock.withLock {
+        entries().clear()
         persist()
     }
 

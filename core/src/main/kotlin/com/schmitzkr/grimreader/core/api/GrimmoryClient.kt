@@ -8,14 +8,17 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.Authenticator
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -52,12 +55,23 @@ interface SessionStore {
     fun replace(session: Session?)
 }
 
-/** Fires once when the server rejects the session for good. */
+/**
+ * Whether the server has rejected the session for good. State rather than
+ * a one-shot event, so a collector that subscribes after the rejection
+ * still sees it: the app's own launch-time user fetch can be the request
+ * that triggers one, before anything is listening. Set only by a refresh
+ * the server rejects while a session was present; a 401 to a request that
+ * went out with no session (after a sign-out, say) is not an expiry.
+ * Cleared by the next stored session and by a deliberate sign-out.
+ */
 class SessionEvents {
-    private val _expired = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val expired: SharedFlow<Unit> = _expired.asSharedFlow()
+    private val _expired = MutableStateFlow(false)
+    val expired: StateFlow<Boolean> = _expired.asStateFlow()
     internal fun signalExpired() {
-        _expired.tryEmit(Unit)
+        _expired.value = true
+    }
+    internal fun reset() {
+        _expired.value = false
     }
 }
 
@@ -123,10 +137,10 @@ class GrimmoryClient(
             // the account really is not allowed.
             // (A redirect also sets priorResponse, so only count earlier 401s.)
             if (response.priorResponse?.code == 401) return@Authenticator null
-            val session = store.current() ?: run {
-                events.signalExpired()
-                return@Authenticator null
-            }
+            // No session at all: the request went out bearer-less after a
+            // sign-out, or another thread's rejected refresh already cleared
+            // it and signalled. Neither is a new expiry.
+            val session = store.current() ?: return@Authenticator null
             val sent = response.request.header("Authorization")
             val latest = store.current()
             // Another thread already refreshed while this request was out.
@@ -150,6 +164,33 @@ class GrimmoryClient(
     /** Headers for loaders outside Retrofit (cover images, the audio player). */
     fun authHeaders(): Map<String, String> =
         store.current()?.let { mapOf("Authorization" to "Bearer ${it.accessToken}") } ?: emptyMap()
+
+    /**
+     * The body of [url] fetched through the authenticated client, for a
+     * loader outside Retrofit that wants the bytes themselves (notification
+     * artwork). Throws [IOException] when the server refuses or sends
+     * nothing; cancelling the caller cancels the call.
+     */
+    suspend fun fetchBytes(url: String): ByteArray = suspendCancellableCoroutine { cont ->
+        val call = okHttp.newCall(Request.Builder().url(url).build())
+        cont.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                cont.resumeWith(Result.failure(e))
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                cont.resumeWith(runCatching {
+                    response.use {
+                        if (!it.isSuccessful) throw IOException("Server said ${it.code}")
+                        val bytes = it.body?.bytes() ?: ByteArray(0)
+                        if (bytes.isEmpty()) throw IOException("Empty response")
+                        bytes
+                    }
+                })
+            }
+        })
+    }
 
     /**
      * `BookMediaController`: an audiobook's art lives at `audiobook-cover`
@@ -262,13 +303,17 @@ class GrimmoryClient(
         }
     }
 
-    /** Stores a fresh login or refresh result. */
+    /** Stores a fresh login or refresh result; a new session is never an expired one. */
     fun storeTokens(tokens: AuthTokens) {
         store.replace(tokens.toSession())
+        events.reset()
     }
 
-    /** Forgets the session on this device only. */
-    fun clearSession() = store.replace(null)
+    /** Forgets the session on this device only. Deliberate, so not an expiry either. */
+    fun clearSession() {
+        store.replace(null)
+        events.reset()
+    }
 
     // ── Refresh ───────────────────────────────────────────────────────────
 

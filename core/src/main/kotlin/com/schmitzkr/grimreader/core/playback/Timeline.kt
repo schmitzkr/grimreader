@@ -57,13 +57,14 @@ fun skipTarget(
         index--
         pos += trackDurationsMs[index]
     }
-    while (pos >= trackDurationsMs[index] && index < trackDurationsMs.size - 1) {
+    // A non-positive duration means unknown: never carry over or clamp to it.
+    while (trackDurationsMs[index] > 0 && pos >= trackDurationsMs[index] && index < trackDurationsMs.size - 1) {
         pos -= trackDurationsMs[index]
         index++
     }
     val end = trackDurationsMs[index]
     if (pos < 0) pos = 0
-    if (pos > end) pos = end
+    if (end > 0 && pos > end) pos = end
     return SkipTarget(index, pos)
 }
 

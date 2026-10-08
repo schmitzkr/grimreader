@@ -90,4 +90,22 @@ class Fb2ToEpubTest {
         val e = convert(zipped)
         assertTrue("OEBPS/text/chap003.xhtml" in e)
     }
+
+    @Test
+    fun `binaries whose ids fold to the same file name do not abort the conversion`() {
+        val xml = fb2.replace("<binary id=\"pic.png\"", "<binary id=\"pic 1.png\" content-type=\"image/png\">iVBORw0KGgo=</binary><binary id=\"pic_1.png\"")
+        val e = convert(xml.toByteArray())
+        assertEquals(1, e.keys.count { it == "OEBPS/images/pic_1.png" })
+    }
+
+    @Test
+    fun `body title and epigraph survive and bare title text renders`() {
+        val xml = fb2.replace("<body><title><p>Sample</p></title>", "<body><title><p>Part One</p></title><epigraph><p>An epigraph.</p></epigraph>")
+            .replace("<section><title><p>Two</p></title>", "<section><title>Chapter 2</title>")
+        val e = convert(xml.toByteArray())
+        val one = e["OEBPS/text/chap001.xhtml"]!!.decodeToString()
+        assertTrue(one.contains("<h1>Part One</h1>"))
+        assertTrue(one.contains("An epigraph."))
+        assertTrue(e["OEBPS/text/chap002.xhtml"]!!.decodeToString().contains("<h2>Chapter 2</h2>"))
+    }
 }

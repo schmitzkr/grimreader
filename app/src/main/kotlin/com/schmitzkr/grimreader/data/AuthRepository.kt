@@ -7,6 +7,7 @@ import android.net.Uri
 import com.schmitzkr.grimreader.core.model.CurrentUser
 import com.schmitzkr.grimreader.core.model.OidcProviderDetails
 import com.schmitzkr.grimreader.core.model.PublicSettings
+import dagger.Lazy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -28,12 +30,23 @@ sealed interface AppState {
     data object SignedIn : AppState
 }
 
+/**
+ * Owns the session's life on this device: restoring it at launch, signing
+ * in and out, changing server, and reacting to the server rejecting it.
+ * Everything device-local that belongs to one account on one server
+ * (see [forgetDeviceState]) is dropped here and nowhere else.
+ */
 @Singleton
 class AuthRepository @Inject constructor(
     private val settings: Settings,
     private val sessionStore: PersistedSessionStore,
     private val clients: ClientHolder,
     private val oidc: OidcFlow,
+    // Lazy: these three watch [currentUser], so the edge back to them cannot
+    // be resolved while this repository is being built.
+    private val progress: Lazy<ProgressStore>,
+    private val sessions: Lazy<SessionRepository>,
+    private val downloads: Lazy<DownloadManager>,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -45,6 +58,16 @@ class AuthRepository @Inject constructor(
 
     /** Called once from the Application: restores server and session. */
     fun start() {
+        // A refresh the server rejects: straight to the login screen from
+        // any screen. Expiry is state, not an event, so this sees a
+        // rejection that happened before it subscribed -- the launch-time
+        // user fetch below is itself a request that can trigger one.
+        scope.launch {
+            clients.events.expired.filter { it }.collect {
+                _currentUser.value = null
+                _state.value = AppState.SignedOut(sessionExpired = true)
+            }
+        }
         scope.launch {
             sessionStore.warm()
             val url = settings.serverUrlNow()
@@ -54,12 +77,6 @@ class AuthRepository @Inject constructor(
                 clients.configure(url)
                 _state.value = if (sessionStore.isSignedIn) AppState.SignedIn else AppState.SignedOut()
                 if (sessionStore.isSignedIn) refreshCurrentUser()
-            }
-            // A refresh the server rejects, or a 401 with nothing to refresh
-            // with: straight to the login screen from any screen.
-            clients.events.expired.collect {
-                _currentUser.value = null
-                _state.value = AppState.SignedOut(sessionExpired = true)
             }
         }
     }
@@ -146,15 +163,36 @@ class AuthRepository @Inject constructor(
      */
     suspend fun signOut() {
         client().clearSession()
+        // The cleared session is on disk before anything else happens, so
+        // a process death right after this cannot bring the account back.
+        sessionStore.flush()
+        forgetDeviceState()
         _currentUser.value = null
         _state.value = AppState.SignedOut()
     }
 
+    /** Signs out first, which also drops the downloads: book ids belong to one server. */
     suspend fun changeServer() {
         signOut()
         settings.setServerUrl(null)
         clients.clear()
         _state.value = AppState.NeedsServer
+    }
+
+    /**
+     * Device-local state belongs to one account on one server: pending and
+     * remembered reading positions, queued reading sessions and downloaded
+     * books (book ids are per server, library access per account). A
+     * deliberate sign-out or server change takes all of it with it, before
+     * the state flips so nothing of the old account is still around when
+     * the next one's [currentUser] triggers the retry queues. An expired
+     * session keeps it: that is normally the same account coming back,
+     * and losing offline progress to a dead token would be the worse bug.
+     */
+    private suspend fun forgetDeviceState() {
+        progress.get().clear()
+        sessions.get().clear()
+        downloads.get().removeAll()
     }
 
     /** Only for a deliberate "sign out everywhere". */

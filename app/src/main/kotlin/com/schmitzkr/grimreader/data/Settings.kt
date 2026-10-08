@@ -1,6 +1,7 @@
 package com.schmitzkr.grimreader.data
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -12,9 +13,12 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.schmitzkr.grimreader.core.api.Session
 import com.schmitzkr.grimreader.core.api.SessionStore
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -181,11 +185,38 @@ class Settings @Inject constructor(private val context: Context) {
 /**
  * The in-memory session OkHttp reads on its own threads, persisted to
  * DataStore behind it. Loaded once at startup with [warm].
+ *
+ * Writes go through one queue with one consumer, so they reach disk in
+ * the order [replace] was called: a token refresh and a sign-out moments
+ * apart used to race as two independent coroutines, and the refresh
+ * could land last and resurrect the account on the next cold start.
  */
 @Singleton
 class PersistedSessionStore @Inject constructor(private val settings: Settings) : SessionStore {
     @Volatile private var session: Session? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private class Write(val session: Session?, val done: CompletableDeferred<Unit>)
+
+    private val writes = Channel<Write>(Channel.UNLIMITED)
+    private val writeLock = Any()
+    @Volatile private var lastWrite = CompletableDeferred(Unit)
+
+    init {
+        scope.launch {
+            for (w in writes) {
+                try {
+                    settings.writeSession(w.session)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not persist the session", e)
+                } finally {
+                    w.done.complete(Unit)
+                }
+            }
+        }
+    }
 
     /** Blocks briefly on first launch; called before the first request. */
     fun warm() {
@@ -194,10 +225,22 @@ class PersistedSessionStore @Inject constructor(private val settings: Settings) 
 
     override fun current(): Session? = session
 
+    /** Synchronous for OkHttp's threads; the memory update and the queue slot are taken together so disk order matches memory order. */
     override fun replace(session: Session?) {
-        this.session = session
-        scope.launch { settings.writeSession(session) }
+        val write = Write(session, CompletableDeferred())
+        synchronized(writeLock) {
+            this.session = session
+            lastWrite = write.done
+            writes.trySend(write)
+        }
     }
 
+    /** Suspends until every [replace] so far is on disk. */
+    suspend fun flush() = lastWrite.await()
+
     val isSignedIn: Boolean get() = session != null
+
+    private companion object {
+        const val TAG = "SessionStore"
+    }
 }

@@ -1,11 +1,24 @@
 package com.schmitzkr.grimreader.core.api
 
 import com.schmitzkr.grimreader.core.model.AuthTokens
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.Authenticator
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -13,8 +26,11 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.Route
+import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.io.File
+import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 
@@ -39,12 +55,23 @@ interface SessionStore {
     fun replace(session: Session?)
 }
 
-/** Fires once when the server rejects the session for good. */
+/**
+ * Whether the server has rejected the session for good. State rather than
+ * a one-shot event, so a collector that subscribes after the rejection
+ * still sees it: the app's own launch-time user fetch can be the request
+ * that triggers one, before anything is listening. Set only by a refresh
+ * the server rejects while a session was present; a 401 to a request that
+ * went out with no session (after a sign-out, say) is not an expiry.
+ * Cleared by the next stored session and by a deliberate sign-out.
+ */
 class SessionEvents {
-    private val _expired = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val expired: SharedFlow<Unit> = _expired.asSharedFlow()
+    private val _expired = MutableStateFlow(false)
+    val expired: StateFlow<Boolean> = _expired.asStateFlow()
     internal fun signalExpired() {
-        _expired.tryEmit(Unit)
+        _expired.value = true
+    }
+    internal fun reset() {
+        _expired.value = false
     }
 }
 
@@ -110,10 +137,10 @@ class GrimmoryClient(
             // the account really is not allowed.
             // (A redirect also sets priorResponse, so only count earlier 401s.)
             if (response.priorResponse?.code == 401) return@Authenticator null
-            val session = store.current() ?: run {
-                events.signalExpired()
-                return@Authenticator null
-            }
+            // No session at all: the request went out bearer-less after a
+            // sign-out, or another thread's rejected refresh already cleared
+            // it and signalled. Neither is a new expiry.
+            val session = store.current() ?: return@Authenticator null
             val sent = response.request.header("Authorization")
             val latest = store.current()
             // Another thread already refreshed while this request was out.
@@ -137,6 +164,33 @@ class GrimmoryClient(
     /** Headers for loaders outside Retrofit (cover images, the audio player). */
     fun authHeaders(): Map<String, String> =
         store.current()?.let { mapOf("Authorization" to "Bearer ${it.accessToken}") } ?: emptyMap()
+
+    /**
+     * The body of [url] fetched through the authenticated client, for a
+     * loader outside Retrofit that wants the bytes themselves (notification
+     * artwork). Throws [IOException] when the server refuses or sends
+     * nothing; cancelling the caller cancels the call.
+     */
+    suspend fun fetchBytes(url: String): ByteArray = suspendCancellableCoroutine { cont ->
+        val call = okHttp.newCall(Request.Builder().url(url).build())
+        cont.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                cont.resumeWith(Result.failure(e))
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                cont.resumeWith(runCatching {
+                    response.use {
+                        if (!it.isSuccessful) throw IOException("Server said ${it.code}")
+                        val bytes = it.body?.bytes() ?: ByteArray(0)
+                        if (bytes.isEmpty()) throw IOException("Empty response")
+                        bytes
+                    }
+                })
+            }
+        })
+    }
 
     /**
      * `BookMediaController`: an audiobook's art lives at `audiobook-cover`
@@ -168,13 +222,98 @@ class GrimmoryClient(
     fun downloadUrl(bookId: Long, fileId: Long?): String =
         if (fileId == null) "${apiBase}books/$bookId/download" else "${apiBase}books/$bookId/files/$fileId/download"
 
-    /** Stores a fresh login or refresh result. */
-    fun storeTokens(tokens: AuthTokens) {
-        store.replace(tokens.toSession())
+    // ── File transfer ─────────────────────────────────────────────────────
+
+    /**
+     * Streams [url] into [target] by way of [partFile], which is renamed into
+     * place only once every byte is there, so a half transfer never looks
+     * complete. Returns the bytes written; [onProgress] gets the fraction
+     * done whenever the server sent a length.
+     *
+     * Cancelling the calling coroutine really stops the transfer: the OkHttp
+     * call is cancelled (the one thing that unblocks a socket read, which
+     * never notices a thread interrupt) and the copy loop re-checks the job
+     * before every buffer, so no more than one buffer is written after the
+     * cancel, and the cancel surfaces as a [CancellationException] rather
+     * than OkHttp's "Canceled" [IOException].
+     *
+     * A transfer that fails deletes its part file. A cancelled one leaves it
+     * to the caller, who may have moved or recreated the parent directory in
+     * the meantime (a download manager replacing a cancelled book does) --
+     * deleting by path then could hit a successor's file of the same name.
+     * A non-2xx answer throws [HttpException] with up to 64 KiB of the body.
+     */
+    suspend fun downloadToFile(url: String, target: File, onProgress: (Float) -> Unit = {}): Long =
+        withCall(Request.Builder().url(url).build()) { response ->
+            if (!response.isSuccessful) {
+                throw HttpException(retrofit2.Response.error<Unit>(response.peekBody(ERROR_BODY_LIMIT), response))
+            }
+            val body = response.body ?: throw IOException("Empty response")
+            val total = body.contentLength()
+            val temp = partFile(target)
+            var written = 0L
+            try {
+                body.byteStream().use { input ->
+                    temp.outputStream().use { output ->
+                        val buffer = ByteArray(COPY_BUFFER)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            output.write(buffer, 0, n)
+                            written += n
+                            if (total > 0) onProgress((written.toFloat() / total).coerceIn(0f, 1f))
+                        }
+                    }
+                }
+                if (!temp.renameTo(target)) throw IOException("Could not move the file into place")
+            } catch (e: Throwable) {
+                if (currentCoroutineContext().isActive) temp.delete()
+                throw e
+            }
+            written
+        }
+
+    /**
+     * Runs [block] on IO with the response to [request], tying the OkHttp
+     * call's life to the calling coroutine's: a watcher cancels the call the
+     * moment the job is cancelled, whether the call is still connecting or
+     * mid-body. OkHttp then fails the blocked read with an IOException,
+     * which is re-thrown as the cancellation it really is.
+     */
+    private suspend fun <T> withCall(request: Request, block: suspend (Response) -> T): T = coroutineScope {
+        val call = okHttp.newCall(request)
+        val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                awaitCancellation()
+            } finally {
+                // A no-op once the call has completed normally.
+                call.cancel()
+            }
+        }
+        try {
+            withContext(Dispatchers.IO) { call.execute().use { block(it) } }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            currentCoroutineContext().ensureActive()
+            throw e
+        } finally {
+            watcher.cancel()
+        }
     }
 
-    /** Forgets the session on this device only. */
-    fun clearSession() = store.replace(null)
+    /** Stores a fresh login or refresh result; a new session is never an expired one. */
+    fun storeTokens(tokens: AuthTokens) {
+        store.replace(tokens.toSession())
+        events.reset()
+    }
+
+    /** Forgets the session on this device only. Deliberate, so not an expiry either. */
+    fun clearSession() {
+        store.replace(null)
+        events.reset()
+    }
 
     // ── Refresh ───────────────────────────────────────────────────────────
 
@@ -203,6 +342,14 @@ class GrimmoryClient(
         refreshToken = refreshToken,
         expiresAt = expires?.let { Instant.now().plusSeconds(it) },
     )
+
+    companion object {
+        private const val COPY_BUFFER = 64 * 1024
+        private const val ERROR_BODY_LIMIT = 64L * 1024
+
+        /** Where [downloadToFile] writes before renaming into [target]: `<target>.part` beside it. */
+        fun partFile(target: File): File = File(target.parentFile, "${target.name}.part")
+    }
 }
 
 /**

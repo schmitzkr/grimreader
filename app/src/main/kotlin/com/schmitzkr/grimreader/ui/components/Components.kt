@@ -1,5 +1,6 @@
 package com.schmitzkr.grimreader.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,11 +42,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.schmitzkr.grimreader.R
 import com.schmitzkr.grimreader.core.model.Book
 
 /** Small uppercase, letter-spaced heading above each section. */
@@ -225,14 +229,23 @@ fun FilterPill(
     }
 }
 
+/** The app mascot. Full-colour pixel art, so never tint it. */
 @Composable
-fun EmptyState(message: String, modifier: Modifier = Modifier, icon: ImageVector? = null) {
+fun ReaperArt(size: Dp, modifier: Modifier = Modifier) {
+    Image(painterResource(R.drawable.reaper), null, modifier.size(size))
+}
+
+@Composable
+fun EmptyState(message: String, modifier: Modifier = Modifier, icon: ImageVector? = null, art: Boolean = false) {
     Column(
         modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        icon?.let {
+        if (art) {
+            ReaperArt(120.dp)
+            Spacer(Modifier.height(12.dp))
+        } else icon?.let {
             Icon(it, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(40.dp))
             Spacer(Modifier.height(12.dp))
         }

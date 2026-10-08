@@ -44,6 +44,7 @@ import com.schmitzkr.grimreader.core.model.PublicSettings
 import com.schmitzkr.grimreader.data.AuthRepository
 import com.schmitzkr.grimreader.data.Settings
 import com.schmitzkr.grimreader.ui.components.GrimCard
+import com.schmitzkr.grimreader.ui.components.ReaperArt
 import com.schmitzkr.grimreader.ui.friendlyError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -121,6 +122,8 @@ fun LoginScreen(sessionExpired: Boolean, vm: LoginViewModel = hiltViewModel()) {
             .padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
+        ReaperArt(96.dp)
+        Spacer(Modifier.height(16.dp))
         Text("Sign in", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {

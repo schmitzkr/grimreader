@@ -29,6 +29,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.schmitzkr.grimreader.data.AuthRepository
+import com.schmitzkr.grimreader.ui.components.ReaperArt
 import com.schmitzkr.grimreader.ui.friendlyError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,6 +66,8 @@ fun ServerUrlScreen(vm: ServerUrlViewModel = hiltViewModel()) {
             .padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
+        ReaperArt(112.dp)
+        Spacer(Modifier.height(16.dp))
         Text("GrimReader", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(4.dp))
         Text(

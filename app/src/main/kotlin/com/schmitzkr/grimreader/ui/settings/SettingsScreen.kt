@@ -63,6 +63,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.LaunchedEffect
 import com.schmitzkr.grimreader.ui.adaptive.ReadableWidth
 import com.schmitzkr.grimreader.ui.components.GrimCard
+import com.schmitzkr.grimreader.ui.components.ReaperArt
 import com.schmitzkr.grimreader.ui.components.SectionLabel
 import com.schmitzkr.grimreader.ui.theme.Accent
 import com.schmitzkr.grimreader.ui.theme.onColorFor
@@ -263,6 +264,7 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                     Item(
                         "GrimReader",
                         "GPL-3.0-only · github.com/${UpdateRepository.REPO}",
+                        art = true,
                     ) { openInBrowser(context, Uri.parse("https://github.com/${UpdateRepository.REPO}")) }
                     HorizontalDivider()
                     Item(
@@ -338,8 +340,9 @@ private fun newIssueUrl(): Uri {
 }
 
 @Composable
-private fun Item(title: String, subtitle: String, onClick: (() -> Unit)? = null) {
+private fun Item(title: String, subtitle: String, art: Boolean = false, onClick: (() -> Unit)? = null) {
     ListItem(
+        leadingContent = if (art) ({ ReaperArt(40.dp) }) else null,
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),

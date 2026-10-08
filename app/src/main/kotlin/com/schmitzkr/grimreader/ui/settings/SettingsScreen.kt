@@ -264,8 +264,9 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                     Item(
                         "GrimReader",
                         "GPL-3.0-only · github.com/${UpdateRepository.REPO}",
+                        onClick = { openInBrowser(context, Uri.parse("https://github.com/${UpdateRepository.REPO}")) },
                         art = true,
-                    ) { openInBrowser(context, Uri.parse("https://github.com/${UpdateRepository.REPO}")) }
+                    )
                     HorizontalDivider()
                     Item(
                         "Report an issue",
@@ -340,7 +341,7 @@ private fun newIssueUrl(): Uri {
 }
 
 @Composable
-private fun Item(title: String, subtitle: String, art: Boolean = false, onClick: (() -> Unit)? = null) {
+private fun Item(title: String, subtitle: String, onClick: (() -> Unit)? = null, art: Boolean = false) {
     ListItem(
         leadingContent = if (art) ({ ReaperArt(40.dp) }) else null,
         headlineContent = { Text(title) },

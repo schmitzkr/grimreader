@@ -155,7 +155,7 @@ class BookDetailViewModel @Inject constructor(
             runCatching {
                 val dir = File(context.cacheDir, "share").apply { mkdirs() }
                 val name = (file.fileName ?: "${book.title}.${file.extension ?: "bin"}").replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                val target = File(dir, name)
+                val target = File(dir, "${book.id}-${file.id}-$name")
                 if (!target.exists() || target.length() == 0L) books.downloadToFile(book, file.id, target)
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", target)
                 val view = Intent(Intent.ACTION_VIEW)
@@ -194,6 +194,7 @@ class BookDetailViewModel @Inject constructor(
     fun toggleFinished(book: Book) {
         viewModelScope.launch {
             runCatching { books.updateReadStatus(book.id, if (book.isFinished) "UNREAD" else "READ") }
+                .onFailure { if (it is CancellationException) throw it; message.value = friendlyError(it) }
         }
     }
 

@@ -160,7 +160,8 @@ private fun MainShell(vm: RootViewModel) {
                 SearchScreen(onBack = { nav.popBackStack() }, onOpenBook = { nav.navigate(Routes.book(it)) })
             }
             composable(Routes.SERIES, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
-                val name = Uri.decode(entry.arguments!!.getString("name")!!)
+                // Navigation has already decoded the path argument; decoding again corrupts names containing '%'.
+                val name = entry.arguments?.getString("name") ?: "null" // StringType parses the literal "null" to null
                 TitledBookList(
                     title = name,
                     onBack = { nav.popBackStack() },

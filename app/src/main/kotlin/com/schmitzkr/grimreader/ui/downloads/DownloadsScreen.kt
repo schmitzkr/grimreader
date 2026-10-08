@@ -64,7 +64,7 @@ fun DownloadsScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit, vm: Download
             }
         }
         if (entries.isEmpty()) {
-            EmptyState("Download a book from its page to listen or read without a connection.", icon = Icons.Outlined.CloudDownload)
+            EmptyState("Download a book from its page to listen or read without a connection.", icon = Icons.Outlined.CloudDownload, art = true)
         } else {
             LazyColumn(
                 Modifier.fillMaxSize(),

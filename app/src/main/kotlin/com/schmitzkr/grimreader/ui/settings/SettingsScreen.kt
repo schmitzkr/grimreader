@@ -63,6 +63,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.LaunchedEffect
 import com.schmitzkr.grimreader.ui.adaptive.ReadableWidth
 import com.schmitzkr.grimreader.ui.components.GrimCard
+import com.schmitzkr.grimreader.ui.components.ReaperArt
 import com.schmitzkr.grimreader.ui.components.SectionLabel
 import com.schmitzkr.grimreader.ui.theme.Accent
 import com.schmitzkr.grimreader.ui.theme.onColorFor
@@ -260,10 +261,15 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                         },
                     ) { vm.checkForUpdates() }
                     HorizontalDivider()
-                    Item(
-                        "GrimReader",
-                        "GPL-3.0-only · github.com/${UpdateRepository.REPO}",
-                    ) { openInBrowser(context, Uri.parse("https://github.com/${UpdateRepository.REPO}")) }
+                    ListItem(
+                        headlineContent = { Text("GrimReader") },
+                        supportingContent = { Text("GPL-3.0-only · github.com/${UpdateRepository.REPO}") },
+                        leadingContent = { ReaperArt(40.dp) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.clickable {
+                            openInBrowser(context, Uri.parse("https://github.com/${UpdateRepository.REPO}"))
+                        },
+                    )
                     HorizontalDivider()
                     Item(
                         "Report an issue",

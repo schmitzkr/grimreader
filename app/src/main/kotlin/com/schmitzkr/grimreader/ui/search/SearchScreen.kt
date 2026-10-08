@@ -140,10 +140,10 @@ fun SearchScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit, vm: SearchViewM
                         )
                     }
                 }
-            } else EmptyState("Search your libraries by title, author or series.")
+            } else EmptyState("Search your libraries by title, author or series.", art = true)
             SearchUiState.Loading -> LoadingState()
             is SearchUiState.Error -> ErrorState(s.message, onRetry = { vm.submit(query) })
-            is SearchUiState.Results -> if (s.books.isEmpty()) EmptyState("Nothing found for \"${s.query}\".")
+            is SearchUiState.Results -> if (s.books.isEmpty()) EmptyState("Nothing found for \"${s.query}\".", art = true)
             else BookGrid(
                 books = s.books,
                 coverUrl = vm::coverUrl,

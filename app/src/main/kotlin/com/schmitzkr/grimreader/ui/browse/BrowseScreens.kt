@@ -149,7 +149,7 @@ fun BrowseScreen(
 
 @Composable
 private fun SeriesList(series: List<Series>, coverUrl: (Long, Boolean) -> String, onOpen: (String) -> Unit) {
-    if (series.isEmpty()) return EmptyState("No series yet.")
+    if (series.isEmpty()) return EmptyState("No series yet.", art = true)
     LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 160.dp)) {
         items(series, key = { it.seriesName }) { s ->
             val cover = s.coverBooks.firstOrNull()
@@ -185,7 +185,7 @@ private fun SeriesList(series: List<Series>, coverUrl: (Long, Boolean) -> String
 
 @Composable
 private fun AuthorsList(authors: List<Author>, photoUrl: (Author) -> String, onOpen: (Long) -> Unit) {
-    if (authors.isEmpty()) return EmptyState("No authors yet.")
+    if (authors.isEmpty()) return EmptyState("No authors yet.", art = true)
     LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 160.dp)) {
         items(authors, key = { it.id }) { a ->
             ListItem(
@@ -209,7 +209,7 @@ private fun AuthorsList(authors: List<Author>, photoUrl: (Author) -> String, onO
 
 @Composable
 private fun ShelvesList(shelves: List<Shelf>, magic: List<MagicShelf>, onOpenShelf: (Long) -> Unit, onOpenMagic: (Long) -> Unit) {
-    if (shelves.isEmpty() && magic.isEmpty()) return EmptyState("No shelves yet.")
+    if (shelves.isEmpty() && magic.isEmpty()) return EmptyState("No shelves yet.", art = true)
     LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 160.dp)) {
         if (shelves.isNotEmpty()) item { SectionLabel("Shelves") }
         items(shelves, key = { "s${it.id}" }) { s ->

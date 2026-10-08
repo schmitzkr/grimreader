@@ -281,6 +281,7 @@ fun LibraryScreen(
                     StatusFilter.UNREAD -> "Everything here has been started."
                     StatusFilter.FINISHED -> "Nothing finished here yet."
                 },
+                art = true,
             )
             else -> BookGrid(
                 books = shown,

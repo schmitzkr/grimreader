@@ -62,6 +62,19 @@
     return Math.round(((idx + within) / spineCount) * 1000) / 10;
   }
 
+  /* Book-wide "Page n of N" once locations exist; the page within the current section until then. */
+  function pageLabelFor(loc) {
+    try {
+      if (locationsReady) {
+        var n = book.locations.locationFromCfi(loc.start.cfi), total = book.locations.length();
+        if (typeof n === 'number' && n >= 0 && total) return 'Page ' + (n + 1) + ' of ' + total;
+      }
+      var d = loc.start.displayed;
+      if (d && d.total) return 'Page ' + d.page + ' of ' + d.total + ' in section';
+    } catch (e) { /* label is cosmetic */ }
+    return '';
+  }
+
   function chapterForHref(href) {
     var base = (href || '').split('#')[0];
     var found = '';
@@ -76,7 +89,34 @@
 
   function relocated(loc) {
     lastLoc = loc;
-    report('onRelocated', loc.start.cfi, percentageFor(loc), chapterFor(loc), !!loc.atEnd);
+    report('onRelocated', loc.start.cfi, percentageFor(loc), chapterFor(loc), !!loc.atEnd, pageLabelFor(loc));
+  }
+
+  /*
+   * Stepping back from the first page of a section: epub.js's own prev()
+   * loads the previous section and scrolls to its last page in the same
+   * tick, using a width measured before that section's images/fonts have
+   * laid out. The scroll offset it computes is stale, so the reader lands
+   * on the wrong page (seen as: tapping back reaches a chapter's end, then
+   * the next tap snaps to that chapter's start). Do it in two steps
+   * instead -- display the previous section, wait for it to settle, then
+   * ask the manager for its true last page.
+   */
+  var stepping = false;
+  function goPrev() {
+    if (!rendition || stepping) return;
+    var d = lastLoc && lastLoc.start && lastLoc.start.displayed;
+    var atSectionStart = !d || d.page <= 1;
+    var cur = lastLoc && lastLoc.start && book.spine.get(lastLoc.start.cfi);
+    var prevSec = atSectionStart && cur && cur.prev && cur.prev();
+    if (!prevSec) { rendition.prev(); return; }
+    stepping = true;
+    rendition.display(prevSec.href).then(function () {
+      return new Promise(function (r) { setTimeout(r, 120); });
+    }).then(function () {
+      var m = rendition.manager;
+      if (m && typeof m.last === 'function') return m.last();
+    }).catch(fail).then(function () { stepping = false; });
   }
 
   function attachGestures(contents) {
@@ -92,7 +132,7 @@
       var dx = t.clientX - startX, dy = t.clientY - startY;
       var quick = Date.now() - startT < 500;
       if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-        if (dx < 0) rendition.next(); else rendition.prev();
+        if (dx < 0) rendition.next(); else goPrev();
       } else if (quick && Math.abs(dx) < 12 && Math.abs(dy) < 12) {
         // currentWidth is the CSS width Kotlin actually measured and sized the
         // rendition to (see open()/resize()) -- contents.window.innerWidth and
@@ -103,7 +143,7 @@
         // tap into a "next chapter" jump or the wrong direction entirely.
         var w = currentWidth || contents.window.innerWidth || doc.documentElement.clientWidth || 1;
         var x = t.clientX / w;
-        if (x < 0.3) rendition.prev();
+        if (x < 0.3) goPrev();
         else if (x > 0.7) rendition.next();
         else report('onTap');
       }
@@ -243,7 +283,7 @@
       }).catch(fail);
     },
     next: function () { if (rendition) rendition.next(); },
-    prev: function () { if (rendition) rendition.prev(); },
+    prev: function () { goPrev(); },
     display: function (target) { if (rendition) rendition.display(target).catch(fail); },
     goToPercentage: function (p) {
       if (!book || !rendition) return;

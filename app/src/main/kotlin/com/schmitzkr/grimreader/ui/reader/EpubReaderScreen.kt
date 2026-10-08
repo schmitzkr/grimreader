@@ -72,6 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -120,6 +121,8 @@ import javax.inject.Inject
 @Serializable
 data class TocEntry(val label: String = "", val href: String = "", val depth: Int = 0)
 
+private val READER_FOOTER_HEIGHT = 22.dp
+
 data class EpubUiState(
     val loading: Boolean = true,
     val error: String? = null,
@@ -130,6 +133,8 @@ data class EpubUiState(
     val cfi: String? = null,
     val percentage: Double = 0.0,
     val chapter: String = "",
+    /** e.g. "Page 12 of 340"; empty until the first relocation. */
+    val pageLabel: String = "",
     /** epub.js's own ~1024-character locations, used as a page count; null until generated (a short session may never reach it). */
     val totalLocations: Int? = null,
     val toc: List<TocEntry> = emptyList(),
@@ -233,8 +238,8 @@ class EpubReaderViewModel @Inject constructor(
     }
 
     /** From the page: a new location on screen. */
-    fun relocated(cfi: String, percentage: Double, chapter: String) {
-        state.update { it.copy(cfi = cfi, percentage = percentage, chapter = chapter) }
+    fun relocated(cfi: String, percentage: Double, chapter: String, pageLabel: String) {
+        state.update { it.copy(cfi = cfi, percentage = percentage, chapter = chapter, pageLabel = pageLabel) }
         saver?.changed(EpubProgress(cfi, percentage))
         foreground()
     }
@@ -360,7 +365,7 @@ private fun guardedEval(js: String): String =
 
 /** The page's window.Android. Calls arrive on the WebView's JS thread. */
 private class ReaderBridge(private val vm: EpubReaderViewModel, private val tapped: () -> Unit) {
-    @JavascriptInterface fun onRelocated(cfi: String, percentage: Double, chapter: String, atEnd: Boolean) = vm.relocated(cfi, percentage, chapter)
+    @JavascriptInterface fun onRelocated(cfi: String, percentage: Double, chapter: String, atEnd: Boolean, pageLabel: String) = vm.relocated(cfi, percentage, chapter, pageLabel)
     @JavascriptInterface fun onReady(tocJson: String) = vm.ready(tocJson)
     @JavascriptInterface fun onLocationsReady(total: Int) = vm.locationsReady(total)
     @JavascriptInterface fun onError(message: String) = vm.pageError(message)
@@ -514,7 +519,7 @@ fun EpubReaderScreen(
             state.loading -> LoadingState()
             state.error != null -> ErrorState(state.error!!, onRetry = { vm.retry() })
             else -> AndroidView(
-                modifier = Modifier.fillMaxSize().systemBarsPadding().onSizeChanged { webViewSizePx = it },
+                modifier = Modifier.fillMaxSize().systemBarsPadding().padding(bottom = READER_FOOTER_HEIGHT).onSizeChanged { webViewSizePx = it },
                 factory = { ctx ->
                     val loader = WebViewAssetLoader.Builder()
                         .setDomain("appassets.androidplatform.net")
@@ -560,6 +565,15 @@ fun EpubReaderScreen(
             )
         }
 
+        if (!state.loading && state.error == null) {
+            // Always-on footer in the strip reserved under the page: where you are, at a glance.
+            val footerColor = if (pageBackground.luminance() > 0.5f) Color(0xFF55555C) else Color(0xFFA8A8B0)
+            val footer = listOf(state.chapter, state.pageLabel, "${state.percentage.toInt()}%").filter { it.isNotBlank() }.joinToString("  ·  ")
+            Text(
+                footer, color = footerColor, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 24.dp).height(READER_FOOTER_HEIGHT),
+            )
+        }
         AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
             ReaderBar(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 8.dp)) {
                 IconButton(onClick = exit) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
@@ -615,6 +629,7 @@ fun EpubReaderScreen(
                         }
                     }
                     Text("${((d?.times(100)) ?: state.percentage).toInt()}%", style = MaterialTheme.typography.labelLarge)
+                    if (d == null && state.pageLabel.isNotBlank()) Text(state.pageLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
             }

@@ -6,6 +6,7 @@ import androidx.core.os.bundleOf
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import com.schmitzkr.grimreader.core.model.AudiobookInfo
+import com.schmitzkr.grimreader.core.model.AudiobookTrack
 import com.schmitzkr.grimreader.core.model.Book
 
 /*
@@ -37,6 +38,33 @@ object Extras {
     const val TOTAL_DURATION_MS = "totalDurationMs"
     const val FOLDER_BASED = "folderBased"
     const val BOOK_FILE_ID = "bookFileId"
+}
+
+/**
+ * The one custom session command, service → controllers: resolving a
+ * `book:<id>` request failed, so no item for that book is coming. Success
+ * needs no signal; the book's items appearing on the player is the signal.
+ */
+object LoadFailed {
+    const val ACTION = "com.schmitzkr.grimreader.LOAD_FAILED"
+    const val BOOK_ID = "bookId"
+    const val MESSAGE = "message"
+}
+
+/**
+ * The track table a loaded book's items carry, in playlist order. Every
+ * item is stamped with its cumulative start and duration, so this needs no
+ * fetch and works offline; the file name is not stamped and stays blank.
+ */
+fun List<MediaItem>.trackTable(): List<AudiobookTrack> = mapIndexed { i, item ->
+    val extras = item.mediaMetadata.extras
+    AudiobookTrack(
+        index = i,
+        fileName = "",
+        title = item.mediaMetadata.title?.toString() ?: "",
+        durationMs = extras?.getLong(Extras.TRACK_DURATION_MS, 0L) ?: 0L,
+        cumulativeStartMs = extras?.getLong(Extras.CUMULATIVE_START_MS, 0L) ?: 0L,
+    )
 }
 
 /** A folder for the browse tree. */

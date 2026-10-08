@@ -2,7 +2,9 @@ package com.schmitzkr.grimreader.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Bundle
 import android.util.Log
+import androidx.core.os.bundleOf
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -16,6 +18,7 @@ import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -34,6 +37,7 @@ import com.schmitzkr.grimreader.data.SessionRepository
 import com.schmitzkr.grimreader.data.Settings
 import com.schmitzkr.grimreader.ui.formatClock
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,6 +61,19 @@ import javax.inject.Inject
  * Progress goes to the server every five seconds while playing and on every
  * pause, stop, finish or switch, with the book-wide absolute position the
  * server expects even on a folder-based book.
+ *
+ * Which player callback owns which side effect (all on the main thread):
+ *  - `playWhenReady` false is the user's pause (or focus loss / unplugged
+ *    headphones): it records the pause for auto-rewind, ends the listening
+ *    session and saves. `playWhenReady` true consumes the pause record.
+ *  - `isPlaying` only drives the save ticker and opens a session once audio
+ *    actually flows; it also flips on a rebuffer or seek, which is neither a
+ *    pause nor a session end.
+ *  - A media item transition to another book ends that book's session at
+ *    its own last snapshot. `STATE_ENDED`/`STATE_IDLE` (finish, stop) end
+ *    the session and save.
+ * Per-book state is keyed by the book it was recorded for ([Pause]) or by
+ * the session's own book ([endSession]) and is never applied to another.
  */
 @UnstableApi
 @AndroidEntryPoint
@@ -72,9 +89,10 @@ class PlaybackService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var ticker: Job? = null
-    private var pausedAt: Instant? = null
+    /** Main thread only: when the book now loaded was paused, for auto-rewind on resume. */
+    private var pause: Pause? = null
     private var lastSavedBookId: Long? = null
-    /** The newest position seen, for closing a session after the player has moved on. */
+    /** Main thread only: the newest position seen, for closing a session after the player has moved on. */
     private var lastSnapshot: ProgressSnapshot? = null
 
     /** Main thread only: the book whose saved speed is being applied before its items are current. */
@@ -176,18 +194,45 @@ class PlaybackService : MediaLibraryService() {
             mediaItems: MutableList<MediaItem>,
             startIndex: Int,
             startPositionMs: Long,
-        ): ListenableFuture<MediaItemsWithStartPosition> = scope.future(Dispatchers.IO) {
+        ): ListenableFuture<MediaItemsWithStartPosition> {
             val bookId = mediaItems.firstOrNull()?.let { it.bookId ?: bookIdOf(it.mediaId) }
             if (bookId == null || mediaItems.size != 1 || mediaItems.first().localConfiguration != null) {
-                return@future MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs)
+                return Futures.immediateFuture(MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs))
             }
-            // The previous book's last position goes out before the switch.
+            // Still on the main thread, before anything else: the switch has
+            // begun, so the previous book's pause must not rewind its item when
+            // the play() that follows this request lands there first.
+            pause = null
+            return scope.future(Dispatchers.IO) {
+                try {
+                    resolveBook(bookId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The player keeps its items, so the controller cannot see
+                    // this from the player alone; tell it the book is not coming.
+                    Log.w(TAG, "Loading book $bookId failed", e)
+                    scope.launch {
+                        session?.broadcastCustomCommand(
+                            SessionCommand(LoadFailed.ACTION, Bundle.EMPTY),
+                            bundleOf(LoadFailed.BOOK_ID to bookId, LoadFailed.MESSAGE to (e.message ?: "Could not load this book")),
+                        )
+                    }
+                    throw e
+                }
+            }
+        }
+
+        /** IO: the previous book's position goes out, then the new one's items and start position come back. */
+        private suspend fun resolveBook(bookId: Long): MediaItemsWithStartPosition {
             saveProgress(sessionEnded = true)
             // A downloaded book plays from disk with no network at all.
             val local = downloads.record(bookId)
             val book = local?.book ?: books.book(bookId)
             val info = local?.info ?: books.audiobookInfo(bookId)
-            val progress = runCatching { books.audiobookProgress(bookId) }.getOrNull()
+            val progress = runCatching { books.audiobookProgress(bookId) }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
             fun fileUrl(file: java.io.File?): String? = file?.let { Uri.fromFile(it).toString() }
             val items = playableItems(
                 book, info,
@@ -216,8 +261,7 @@ class PlaybackService : MediaLibraryService() {
                 applyingSpeedForBookId = bookId
                 try { player.setPlaybackSpeed(speed) } finally { applyingSpeedForBookId = null }
             }
-            pausedAt = null
-            MediaItemsWithStartPosition(items, index, position)
+            return MediaItemsWithStartPosition(items, index, position)
         }
 
         override fun onAddMediaItems(
@@ -246,34 +290,41 @@ class PlaybackService : MediaLibraryService() {
     // ── Progress ──────────────────────────────────────────────────────────
 
     private inner class PlayerEvents : Player.Listener {
+        /** Audio flowing or not: the ticker, and a session once sound actually starts. A rebuffer or seek changes nothing else. */
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) {
                 startTicker()
                 beginSession()
             } else {
                 stopTicker()
-                pausedAt = Instant.now()
-                // A rebuffer mid-play is not a pause; the session runs on.
-                if (!(player.playWhenReady && player.playbackState == Player.STATE_BUFFERING)) endSession()
+            }
+        }
+
+        /** The user's intent to play or not: pause side effects live here, whatever the buffer is doing. */
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (playWhenReady) {
+                val p = pause ?: return
+                pause = null
+                scope.launch { autoRewind(p) }
+            } else {
+                pause = player.currentMediaItem?.bookId?.let { Pause(it, Instant.now()) }
+                endSession()
                 scope.launch { saveProgress(sessionEnded = true) }
             }
         }
 
+        /** Another book's item is current (or none): the running session was that other book's and ends at its own position. */
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            val previous = lastSnapshot ?: return
-            val next = mediaItem?.bookId
-            if (next != null && next != previous.bookId) {
-                endSession(previous)
+            val running = sessions.current(SessionKind.AUDIO) ?: return
+            if (mediaItem?.bookId != running.bookId) {
+                endSession()
                 if (player.isPlaying) beginSession()
             }
         }
 
-        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            if (playWhenReady) scope.launch { autoRewind() }
-        }
-
         override fun onPlaybackStateChanged(playbackState: Int) {
-            if (playbackState == Player.STATE_ENDED) {
+            // Finished, or stopped (stop() keeps the items and position, so the save is the real one).
+            if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                 stopTicker()
                 endSession()
                 scope.launch { saveProgress(sessionEnded = true) }
@@ -292,12 +343,13 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    /** Backs up a little on resume, more the longer the pause lasted. */
-    private suspend fun autoRewind() {
-        val since = pausedAt ?: return
-        pausedAt = null
+    private data class Pause(val bookId: Long, val at: Instant)
+
+    /** Backs up a little on resume, more the longer the pause lasted; only the book that was paused. */
+    private suspend fun autoRewind(paused: Pause) {
         if (!settings.autoRewind.first()) return
-        val back = autoRewindFor(Duration.between(since, Instant.now()))
+        if (player.currentMediaItem?.bookId != paused.bookId) return
+        val back = autoRewindFor(Duration.between(paused.at, Instant.now()))
         if (back.isZero) return
         val target = player.currentPosition - back.toMillis()
         if (target > 0 || player.currentMediaItemIndex == 0) {
@@ -315,17 +367,25 @@ class PlaybackService : MediaLibraryService() {
 
     private fun beginSession() {
         val s = snapshotProgress() ?: return
-        val previous = lastSnapshot
-        lastSnapshot = s
         val running = sessions.current(SessionKind.AUDIO)
+        // Another book's session is still open: close it at its own last position, before this snapshot replaces it.
+        if (running != null && running.bookId != s.bookId) endSession()
+        lastSnapshot = s
         if (running?.bookId == s.bookId) return
-        if (running != null) endSession(previous?.takeIf { it.bookId == running.bookId })
         sessions.begin(SessionKind.AUDIO, s.bookId, "AUDIOBOOK", s.progress.percentage, formatClock(s.progress.positionMs))
     }
 
-    private fun endSession(at: ProgressSnapshot? = snapshotProgress() ?: lastSnapshot) {
-        val s = at ?: return
-        sessions.end(SessionKind.AUDIO, s.progress.percentage, formatClock(s.progress.positionMs))
+    /**
+     * Ends the running session at the newest position seen for its own
+     * book: the player's, if it is still on that book, else the last
+     * snapshot taken before it moved on. A snapshot of another book is
+     * never used; with none at all the session ends where it began.
+     */
+    private fun endSession() {
+        val running = sessions.current(SessionKind.AUDIO) ?: return
+        val at = listOfNotNull(snapshotProgress(), lastSnapshot).firstOrNull { it.bookId == running.bookId }
+        if (at != null) sessions.end(SessionKind.AUDIO, at.progress.percentage, formatClock(at.progress.positionMs))
+        else sessions.end(SessionKind.AUDIO, running.startProgress, running.startLocation)
     }
 
     private fun startTicker() {

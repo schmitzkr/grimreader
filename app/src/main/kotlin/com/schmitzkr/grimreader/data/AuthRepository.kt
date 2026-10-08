@@ -7,6 +7,7 @@ import android.net.Uri
 import com.schmitzkr.grimreader.core.model.CurrentUser
 import com.schmitzkr.grimreader.core.model.OidcProviderDetails
 import com.schmitzkr.grimreader.core.model.PublicSettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -127,8 +128,16 @@ class AuthRepository @Inject constructor(
         return true
     }
 
+    /** Keeps the last known user when the fetch fails; sign-out and expiry are what clear it. */
     suspend fun refreshCurrentUser() {
-        _currentUser.value = runCatching { client().api.currentUser() }.getOrNull()
+        val fetched = try {
+            client().api.currentUser()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        if (fetched != null) _currentUser.value = fetched
     }
 
     /**

@@ -173,7 +173,8 @@ class BooksRepository @Inject constructor(
 
     /** Mails the book's primary file to the user's default recipient; see [GrimmoryApi.sendBookToDefaultRecipient]. */
     suspend fun sendToEreader(bookId: Long) {
-        api.sendBookToDefaultRecipient(bookId)
+        val response = api.sendBookToDefaultRecipient(bookId)
+        if (!response.isSuccessful) throw HttpException(response)
     }
 
     suspend fun updatePersonalRating(bookId: Long, rating: Int) {

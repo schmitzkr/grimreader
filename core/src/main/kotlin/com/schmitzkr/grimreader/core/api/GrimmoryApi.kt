@@ -183,10 +183,12 @@ interface GrimmoryApi {
      * Quick send: the server mails the primary file to the user's default
      * recipient through the default provider. A 204 means the send was
      * queued, not delivered; a failure after that only reaches the server's
-     * log. With no default recipient or provider configured it answers 4xx.
+     * log. With no default recipient or provider configured it answers 404.
+     * Returned as a [Response] like the other bodyless calls; the caller
+     * must check [Response.isSuccessful].
      */
     @POST("email/book/{id}")
-    suspend fun sendBookToDefaultRecipient(@Path("id") id: Long)
+    suspend fun sendBookToDefaultRecipient(@Path("id") id: Long): Response<Unit>
 
     // ── Sessions and stats ────────────────────────────────────────────────
 

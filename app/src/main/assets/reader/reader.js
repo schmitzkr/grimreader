@@ -80,7 +80,7 @@
     var found = '';
     toc.forEach(function (t) {
       var th = t.href.split('#')[0];
-      if (th && (th === base || base.slice(-th.length) === th || th.slice(-base.length) === base)) found = found || t.label;
+      if (th && base && (th === base || base.slice(-th.length - 1) === '/' + th || th.slice(-base.length - 1) === '/' + base)) found = found || t.label;
     });
     return found;
   }
@@ -114,8 +114,17 @@
     rendition.display(prevSec.href).then(function () {
       return new Promise(function (r) { setTimeout(r, 120); });
     }).then(function () {
+      // The bundled epub.js manager has no last(); do what its own prev()
+      // does after loading the previous section: scroll the paginated
+      // container to the final page, then report the new location.
       var m = rendition.manager;
-      if (m && typeof m.last === 'function') return m.last();
+      if (m && m.container && typeof m.scrollTo === 'function' && m.layout) {
+        var rtl = m.settings && m.settings.direction === 'rtl';
+        if (!rtl) m.scrollTo(m.container.scrollWidth - m.layout.delta, 0, true);
+        else if (m.settings.rtlScrollType === 'default') m.scrollTo(0, 0, true);
+        else m.scrollTo(-1 * m.container.scrollWidth + m.layout.delta, 0, true);
+        return rendition.reportLocation();
+      }
     }).catch(fail).then(function () { stepping = false; });
   }
 
@@ -304,21 +313,23 @@
       // never shows through during a resize/layout flash.
       document.body.style.background = themes[name]['body.' + name].background;
     },
-    setFontSize: function (pct) { if (rendition) rendition.themes.fontSize(pct + '%'); },
-    /* 'book' keeps the publisher's fonts; the others override every element. */
+    setFontSize: function (pct) { if (rendition) rendition.themes.fontSize(pct === 100 ? '' : pct + '%'); },
+    /* 'book' keeps the publisher's fonts; the others override every element.
+       A falsy value makes epub.js's Contents.css() remove the property, so the
+       book's own stylesheet applies (the literal 'inherit' would override it). */
     setFont: function (name) {
       if (!rendition) return;
       var families = {
-        book: 'inherit',
+        book: '',
         serif: 'Georgia, "Times New Roman", "Noto Serif", serif',
         sans: 'system-ui, Roboto, "Noto Sans", sans-serif'
       };
-      rendition.themes.override('font-family', families[name] || 'inherit', name !== 'book');
+      rendition.themes.override('font-family', families[name] || '', name !== 'book');
     },
     /* 100 keeps the book's own spacing; otherwise a multiplier on the font size. */
     setLineHeight: function (pct) {
       if (!rendition) return;
-      rendition.themes.override('line-height', pct === 100 ? 'inherit' : (pct / 100).toFixed(2), pct !== 100);
+      rendition.themes.override('line-height', pct === 100 ? '' : (pct / 100).toFixed(2), pct !== 100);
     }
   };
 })();

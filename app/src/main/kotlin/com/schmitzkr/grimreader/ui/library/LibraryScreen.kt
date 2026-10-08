@@ -40,6 +40,7 @@ import com.schmitzkr.grimreader.data.BooksRepository
 import com.schmitzkr.grimreader.data.DownloadManager
 import com.schmitzkr.grimreader.data.Settings
 import androidx.compose.material.icons.rounded.DownloadDone
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -127,7 +128,11 @@ class LibraryViewModel @Inject constructor(
 
     /** The id comes from the screen, not the route: the Libraries tab embeds this view for a lone library. */
     fun start(id: Long) {
-        if (libraryId == id) return
+        if (libraryId == id) {
+            // Back on screen after being deselected: catch up on what the collector missed.
+            load(quiet = true)
+            return
+        }
         libraryId = id
         viewModelScope.launch {
             restoreFilters()
@@ -146,7 +151,11 @@ class LibraryViewModel @Inject constructor(
                 }
             }
         }
-        viewModelScope.launch { books.progressChanged.collect { load(quiet = true) } }
+    }
+
+    /** Reloads on each progress event; the screen runs this only while it is shown, so deselected libraries stay idle. */
+    suspend fun reloadOnProgress() {
+        books.progressChanged.collect { load(quiet = true) }
     }
 
     fun coverUrl(book: Book) = books.coverUrl(book)
@@ -174,9 +183,13 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch { settings.rememberLibraryFilters(libraryId, s.sort.name, s.type.name, s.status.name) }
     }
 
+    private var loadJob: Job? = null
+
     fun load(quiet: Boolean = false) {
         val s = state.value
-        viewModelScope.launch {
+        // Only the latest request may write: a slower earlier one would overwrite the selected filter's books.
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             if (!quiet) state.update { it.copy(loading = true, error = null) }
             runCatching {
                 books.libraryBooks(
@@ -200,7 +213,7 @@ fun LibraryScreen(
     titleOverride: String? = null,
     vm: LibraryViewModel = hiltViewModel(key = "library-$libraryId"),
 ) {
-    LaunchedEffect(libraryId) { vm.start(libraryId) }
+    LaunchedEffect(libraryId) { vm.start(libraryId); vm.reloadOnProgress() }
     val state by vm.state.collectAsStateWithLifecycle()
     val downloaded by vm.downloadedIds.collectAsStateWithLifecycle()
     var sortMenu by remember { mutableStateOf(false) }

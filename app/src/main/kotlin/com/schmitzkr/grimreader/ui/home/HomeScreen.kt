@@ -63,6 +63,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalTime
 import javax.inject.Inject
@@ -114,7 +115,10 @@ class HomeViewModel @Inject constructor(
                 }.filterNotNull()
                 (serverRows + appRows()).filter { !(it.kind.hidesWhenEmpty && it.books.isEmpty()) }
             }.onSuccess { _state.value = HomeUiState.Ready(it) }
-                .onFailure { if (current !is HomeUiState.Ready) _state.value = HomeUiState.Error(friendlyError(it)) }
+                .onFailure {
+                    if (current !is HomeUiState.Ready) _state.value = HomeUiState.Error(friendlyError(it))
+                    else _state.update { s -> if (s is HomeUiState.Ready) s.copy(refreshing = false) else s }
+                }
         }
     }
 

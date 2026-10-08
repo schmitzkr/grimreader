@@ -61,6 +61,8 @@ class LoginViewModel @Inject constructor(
     val serverUrl = settings.serverUrl.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
+    /** Failure to launch SSO; kept apart from [error] so it is not shown as a password problem. */
+    val ssoError = MutableStateFlow<String?>(null)
     val publicSettings = MutableStateFlow<PublicSettings?>(null)
     val oidcError = auth.oidcError
 
@@ -75,6 +77,7 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             busy.value = true
             error.value = null
+            ssoError.value = null
             runCatching { auth.login(username.trim(), password) }
                 .onFailure {
                     error.value = if (it is retrofit2.HttpException && it.code() == 401) {
@@ -91,8 +94,9 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             auth.clearOidcFailure()
             error.value = null
+            ssoError.value = null
             runCatching { auth.beginOidc(provider) }
-                .onFailure { error.value = friendlyError(it) }
+                .onFailure { ssoError.value = friendlyError(it) }
         }
     }
 
@@ -108,6 +112,7 @@ fun LoginScreen(sessionExpired: Boolean, vm: LoginViewModel = hiltViewModel()) {
     var showPassword by remember { mutableStateOf(false) }
     val busy by vm.busy.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
+    val ssoError by vm.ssoError.collectAsStateWithLifecycle()
     val oidcError by vm.oidcError.collectAsStateWithLifecycle()
     val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
     val public by vm.publicSettings.collectAsStateWithLifecycle()
@@ -145,7 +150,7 @@ fun LoginScreen(sessionExpired: Boolean, vm: LoginViewModel = hiltViewModel()) {
                 )
             }
         }
-        (oidcError ?: error.takeIf { ssoOnly })?.let {
+        (oidcError ?: ssoError ?: error.takeIf { ssoOnly })?.let {
             Spacer(Modifier.height(8.dp))
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
         }

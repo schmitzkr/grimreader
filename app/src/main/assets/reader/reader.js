@@ -62,6 +62,19 @@
     return Math.round(((idx + within) / spineCount) * 1000) / 10;
   }
 
+  /* Book-wide "Page n of N" once locations exist; the page within the current section until then. */
+  function pageLabelFor(loc) {
+    try {
+      if (locationsReady) {
+        var n = book.locations.locationFromCfi(loc.start.cfi), total = book.locations.length();
+        if (typeof n === 'number' && n >= 0 && total) return 'Page ' + (n + 1) + ' of ' + total;
+      }
+      var d = loc.start.displayed;
+      if (d && d.total) return 'Page ' + d.page + ' of ' + d.total + ' in section';
+    } catch (e) { /* label is cosmetic */ }
+    return '';
+  }
+
   function chapterFor(loc) {
     var href = loc.start.href || '';
     var base = href.split('#')[0];
@@ -75,7 +88,7 @@
 
   function relocated(loc) {
     lastLoc = loc;
-    report('onRelocated', loc.start.cfi, percentageFor(loc), chapterFor(loc), !!loc.atEnd);
+    report('onRelocated', loc.start.cfi, percentageFor(loc), chapterFor(loc), !!loc.atEnd, pageLabelFor(loc));
   }
 
   /*

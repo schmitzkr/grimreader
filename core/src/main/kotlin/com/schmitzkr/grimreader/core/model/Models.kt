@@ -278,7 +278,11 @@ data class UserPermissions(
     val canDownload: Boolean = false,
     val canUpload: Boolean = false,
     val canAccessUserStats: Boolean = false,
-)
+    val canEmailBook: Boolean = false,
+) {
+    /** The server lets admins email books whatever the flag says. */
+    val mayEmailBooks: Boolean get() = isAdmin || canEmailBook
+}
 
 @Serializable
 data class UserSettings(

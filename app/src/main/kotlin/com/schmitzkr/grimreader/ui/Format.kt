@@ -53,3 +53,14 @@ fun friendlyError(error: Throwable): String = when (error) {
     is IOException -> "Could not connect to the server."
     else -> error.message ?: "Something went wrong."
 }
+
+/**
+ * [friendlyError] for the quick-send call, where a 400 or 404 means the
+ * server has no default email provider or recipient to send with.
+ */
+fun sendErrorMessage(error: Throwable): String =
+    if (error is HttpException && (error.code() == 400 || error.code() == 404)) {
+        "Set a default email provider and eReader address in Grimmory's email settings first."
+    } else {
+        friendlyError(error)
+    }

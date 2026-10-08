@@ -101,6 +101,7 @@ class PlayerController @Inject constructor(
             c.play()
             return
         }
+        sawItemSincePlay = false
         _state.update { it.copy(loading = true, bookId = bookId) }
         c.setMediaItem(MediaItem.Builder().setMediaId(bookMediaId(bookId)).build())
         c.prepare()
@@ -253,15 +254,24 @@ class PlayerController @Inject constructor(
         }
     }
 
+    private var sawItemSincePlay = false
+
     private fun refresh() {
         val c = controller ?: return
         val item = c.currentMediaItem
         if (item == null || c.mediaItemCount == 0) {
+            // An item that appeared and vanished again (or a player error) means the
+            // service failed to set the items; stop showing the spinner.
+            if (_state.value.loading && (sawItemSincePlay || c.playerError != null)) {
+                sawItemSincePlay = false
+                _state.value = _state.value.copy(loading = false)
+            }
             if (!_state.value.loading) _state.value = _state.value.copy(
                 bookId = null, title = "", playing = false, positionMs = 0, durationMs = 0,
             )
             return
         }
+        sawItemSincePlay = true
         val bookId = item.bookId
         if (bookId != null && info?.bookId != bookId && !_state.value.loading) loadInfo(bookId)
         val position = c.currentPosition.coerceAtLeast(0)

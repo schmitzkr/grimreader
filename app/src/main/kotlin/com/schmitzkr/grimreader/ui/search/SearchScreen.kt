@@ -90,6 +90,12 @@ class SearchViewModel @Inject constructor(
         if (q.trim().length >= 2) viewModelScope.launch { settings.rememberSearch(q) }
     }
 
+    /** Re-run the current query; re-assigning the same text to [query] would emit nothing. */
+    fun retry() {
+        val q = query.value.trim()
+        if (q.length >= 2) viewModelScope.launch { search(q) }
+    }
+
     fun clearRecent() = viewModelScope.launch { settings.clearSearches() }
 
     private suspend fun search(q: String) {
@@ -142,7 +148,7 @@ fun SearchScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit, vm: SearchViewM
                 }
             } else EmptyState("Search your libraries by title, author or series.", art = true)
             SearchUiState.Loading -> LoadingState()
-            is SearchUiState.Error -> ErrorState(s.message, onRetry = { vm.submit(query) })
+            is SearchUiState.Error -> ErrorState(s.message, onRetry = vm::retry)
             is SearchUiState.Results -> if (s.books.isEmpty()) EmptyState("Nothing found for \"${s.query}\".", art = true)
             else BookGrid(
                 books = s.books,

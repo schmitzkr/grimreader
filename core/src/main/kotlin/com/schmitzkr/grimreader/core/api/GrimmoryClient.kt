@@ -70,6 +70,7 @@ class GrimmoryClient(
 ) {
     val baseUrl: String = serverUrl.trimEnd('/')
     val apiBase: String = "$baseUrl/api/v1/"
+    private val apiPrefix: String = java.net.URI(apiBase).rawPath
 
     val json: Json = Json {
         ignoreUnknownKeys = true
@@ -92,7 +93,7 @@ class GrimmoryClient(
         .addInterceptor(Interceptor { chain ->
             val request = chain.request()
             val builder = request.newBuilder().header("User-Agent", userAgent)
-            if (!isAuthPath(request.url.encodedPath)) {
+            if (!isAuthPath(request.url.encodedPath, apiPrefix)) {
                 var session = store.current()
                 if (session != null && session.expiresSoon()) {
                     // Best effort: on failure the old token goes out and the
@@ -104,10 +105,11 @@ class GrimmoryClient(
             chain.proceed(builder.build())
         })
         .authenticator(Authenticator { _: Route?, response: Response ->
-            if (isAuthPath(response.request.url.encodedPath)) return@Authenticator null
+            if (isAuthPath(response.request.url.encodedPath, apiPrefix)) return@Authenticator null
             // One retry per request: a second 401 with a fresh token means
             // the account really is not allowed.
-            if (response.priorResponse != null) return@Authenticator null
+            // (A redirect also sets priorResponse, so only count earlier 401s.)
+            if (response.priorResponse?.code == 401) return@Authenticator null
             val session = store.current() ?: run {
                 events.signalExpired()
                 return@Authenticator null
@@ -196,15 +198,20 @@ class GrimmoryClient(
         }
     }
 
-    private fun isAuthPath(path: String): Boolean =
-        path.contains("/auth/") || path.endsWith("/public-settings")
-
     private fun AuthTokens.toSession() = Session(
         accessToken = accessToken,
         refreshToken = refreshToken,
         expiresAt = expires?.let { Instant.now().plusSeconds(it) },
     )
 }
+
+/**
+ * True for the endpoints that must go out without a bearer and are never
+ * retried on a 401. Anchored to the API prefix so a user-controlled path
+ * segment named `auth` (a series, say) is not mistaken for one.
+ */
+internal fun isAuthPath(path: String, apiPrefix: String): Boolean =
+    path.startsWith("${apiPrefix}auth/") || path == "${apiPrefix}public-settings"
 
 internal sealed interface RefreshResult {
     data class Success(val tokens: AuthTokens) : RefreshResult

@@ -29,7 +29,7 @@ fun audiobookProgressBody(progress: AudiobookProgress, bookFileId: Long?, json: 
             put("fileProgress", buildJsonObject {
                 put("bookFileId", bookFileId)
                 put("positionData", progress.positionMs.toString())
-                progress.trackIndex?.let { put("positionHref", it.toString()) } ?: put("positionHref", JsonNull)
+                put("positionHref", progress.trackIndex?.toString())
                 put("progressPercent", progress.percentage)
             })
         }

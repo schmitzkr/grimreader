@@ -95,7 +95,7 @@ object Fb2ToEpub {
             val type = b.getAttribute("content-type").ifBlank { "image/jpeg" }
             val data = runCatching { Base64.getMimeDecoder().decode(b.text().trim()) }.getOrNull() ?: return@mapNotNull null
             Image(safeName(id), type, data)
-        }
+        }.distinctBy { it.id } // ids that fold to the same file name would collide in the zip
 
         val chapters = mutableListOf<Chapter>()
         var n = 0
@@ -113,8 +113,10 @@ object Fb2ToEpub {
                 if (sections.isEmpty()) {
                     add(body.child("title")?.titleText().orEmpty().ifBlank { title }, listOf(body))
                 } else {
+                    // The body's own title, epigraph and images ride along at the top of its first chapter.
+                    val preface = body.elements().filter { it.tagName == "title" || it.tagName == "epigraph" || it.tagName == "image" }
                     sections.forEachIndexed { i, s ->
-                        add(s.child("title")?.titleText().orEmpty().ifBlank { "Chapter ${i + 1}" }, listOf(s))
+                        add(s.child("title")?.titleText().orEmpty().ifBlank { "Chapter ${i + 1}" }, if (i == 0) preface + s else listOf(s))
                     }
                 }
             }
@@ -257,6 +259,12 @@ object Fb2ToEpub {
         private fun heading(el: Element, sb: StringBuilder) {
             val level = if (el.parentNode is Element && (el.parentNode as Element).tagName == "body") "h1" else "h2"
             sb.append('<').append(level).append(idAttr(el)).append('>')
+            if (el.elements().none { it.tagName == "p" }) {
+                // Bare text straight inside <title>.
+                children(el, sb)
+                sb.append("</").append(level).append(">\n")
+                return
+            }
             var first = true
             el.elements().forEach { line ->
                 if (line.tagName == "empty-line") return@forEach

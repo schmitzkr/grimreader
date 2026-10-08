@@ -32,12 +32,14 @@ import kotlinx.serialization.json.buildJsonObject
 import java.io.IOException
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -248,8 +250,17 @@ class BooksRepository @Inject constructor(
         if (!response.isSuccessful) throw HttpException(response)
         val body = response.body() ?: error("Empty download")
         val temp = File(target.parentFile, "${target.name}.part")
-        body.byteStream().use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
-        if (!temp.renameTo(target)) error("Could not move the downloaded file into place")
+        withContext(Dispatchers.IO) {
+            try {
+                body.use { b ->
+                    b.byteStream().use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
+                }
+                if (!temp.renameTo(target)) error("Could not move the downloaded file into place")
+            } catch (e: Throwable) {
+                temp.delete()
+                throw e
+            }
+        }
     }
 
     suspend fun audiobookProgress(bookId: Long): AudiobookProgress? =

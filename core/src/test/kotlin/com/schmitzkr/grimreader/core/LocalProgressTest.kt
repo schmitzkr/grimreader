@@ -6,6 +6,9 @@ import com.schmitzkr.grimreader.core.api.parseAudiobookProgress
 import com.schmitzkr.grimreader.core.api.resolveProgress
 import com.schmitzkr.grimreader.core.model.AudiobookProgress
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -42,5 +45,12 @@ class LocalProgressTest {
     @Test
     fun `a saved body parses back like a server response`() {
         assertEquals(5_000L, parseAudiobookProgress(localBody, json)!!.positionMs)
+    }
+
+    @Test
+    fun `the audiobook file progress carries the track index as positionHref`() {
+        val body = audiobookProgressBody(AudiobookProgress(positionMs = 5_000, trackIndex = 3, percentage = 5.0), bookFileId = 9, json)
+        assertEquals("3", body["fileProgress"]!!.jsonObject["positionHref"]!!.jsonPrimitive.content)
+        assertEquals(JsonNull, localBody["fileProgress"]!!.jsonObject["positionHref"])
     }
 }

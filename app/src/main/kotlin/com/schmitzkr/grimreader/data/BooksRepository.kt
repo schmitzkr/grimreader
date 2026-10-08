@@ -171,6 +171,11 @@ class BooksRepository @Inject constructor(
         notifyProgressChanged(bookId)
     }
 
+    /** Mails the book's primary file to the user's default recipient; see [GrimmoryApi.sendBookToDefaultRecipient]. */
+    suspend fun sendToEreader(bookId: Long) {
+        api.sendBookToDefaultRecipient(bookId)
+    }
+
     suspend fun updatePersonalRating(bookId: Long, rating: Int) {
         api.updatePersonalRating(bookId, RatingRequest(rating))
     }

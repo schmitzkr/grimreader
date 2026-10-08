@@ -64,8 +64,11 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Box
 import java.io.File
+import androidx.compose.material.icons.automirrored.rounded.Send
+import com.schmitzkr.grimreader.data.AuthRepository
 import com.schmitzkr.grimreader.data.BooksRepository
 import com.schmitzkr.grimreader.data.DownloadManager
+import com.schmitzkr.grimreader.ui.sendErrorMessage
 import com.schmitzkr.grimreader.data.DownloadStatus
 import com.schmitzkr.grimreader.ui.formatBytes
 import androidx.compose.material.icons.rounded.Close
@@ -95,8 +98,32 @@ class BookDetailViewModel @Inject constructor(
     val player: PlayerController,
     val downloads: DownloadManager,
     private val context: Context,
+    auth: AuthRepository,
     savedState: SavedStateHandle,
 ) : ViewModel() {
+    val user = auth.currentUser
+
+    /** True while a send is in flight; the button shows it and ignores taps. */
+    val sending = MutableStateFlow(false)
+
+    /** The outcome of the last send, shown in the snackbar. */
+    val sendResult = MutableStateFlow<String?>(null)
+
+    fun sendToEreader(book: Book) {
+        if (sending.value) return
+        sending.value = true
+        viewModelScope.launch {
+            sendResult.value = runCatching { books.sendToEreader(book.id) }
+                .fold(
+                    onSuccess = { "Sent to your eReader address. Delivery can take a minute." },
+                    onFailure = { sendErrorMessage(it) },
+                )
+            sending.value = false
+        }
+    }
+
+    fun clearSendResult() { sendResult.value = null }
+
     /** The file being fetched for another app, while it is. */
     val opening = MutableStateFlow<Long?>(null)
     val openError = MutableStateFlow<String?>(null)
@@ -183,6 +210,9 @@ fun BookDetailScreen(
     }
     val opening by vm.opening.collectAsStateWithLifecycle()
     val openError by vm.openError.collectAsStateWithLifecycle()
+    val sending by vm.sending.collectAsStateWithLifecycle()
+    val sendResult by vm.sendResult.collectAsStateWithLifecycle()
+    val user by vm.user.collectAsStateWithLifecycle()
 
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -343,6 +373,19 @@ fun BookDetailScreen(
                             }
                         }
                     }
+                    // The server mails the primary file, so an audiobook with no ebook has nothing to send.
+                    if (user?.permissions?.mayEmailBooks == true && !book.isAudiobook && book.files.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = { vm.sendToEreader(book) },
+                            enabled = !sending,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.Send, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (sending) "Sending…" else "Send to eReader")
+                        }
+                    }
                     Spacer(Modifier.height(10.dp))
                     OutlinedButton(onClick = { vm.toggleFinished(book) }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Rounded.Check, null)
@@ -414,10 +457,10 @@ fun BookDetailScreen(
             }
         }
     }
-    openError?.let {
+    (openError ?: sendResult)?.let {
         Snackbar(
             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-            action = { TextButton(onClick = vm::clearOpenError) { Text("OK") } },
+            action = { TextButton(onClick = { vm.clearOpenError(); vm.clearSendResult() }) { Text("OK") } },
         ) { Text(it) }
     }
     }

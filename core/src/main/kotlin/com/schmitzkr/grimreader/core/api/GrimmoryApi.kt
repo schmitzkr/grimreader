@@ -177,6 +177,17 @@ interface GrimmoryApi {
     @DELETE("bookmarks/{id}")
     suspend fun deleteBookmark(@Path("id") id: Long): Response<Unit>
 
+    // ── Email ─────────────────────────────────────────────────────────────
+
+    /**
+     * Quick send: the server mails the primary file to the user's default
+     * recipient through the default provider. A 204 means the send was
+     * queued, not delivered; a failure after that only reaches the server's
+     * log. With no default recipient or provider configured it answers 4xx.
+     */
+    @POST("email/book/{id}")
+    suspend fun sendBookToDefaultRecipient(@Path("id") id: Long)
+
     // ── Sessions and stats ────────────────────────────────────────────────
 
     @POST("reading-sessions")

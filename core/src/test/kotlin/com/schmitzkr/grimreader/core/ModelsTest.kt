@@ -62,6 +62,17 @@ class ModelsTest {
     }
 
     @Test
+    fun `email permission comes from its own flag or from admin`() {
+        fun perms(body: String) = json.decodeFromString(
+            CurrentUser.serializer(),
+            """{"id":1,"username":"u","permissions":$body}""",
+        ).permissions!!
+        assertTrue(perms("""{"canEmailBook":true}""").mayEmailBooks)
+        assertTrue(perms("""{"admin":true}""").mayEmailBooks)
+        assertFalse(perms("""{"canDownload":true}""").mayEmailBooks)
+    }
+
+    @Test
     fun `file ids prefer the primary file and never send it as an additional file`() {
         val book = Book(
             id = 1, title = "Dual", primaryFileId = 10, primaryFileType = "AUDIOBOOK",

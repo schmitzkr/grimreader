@@ -67,6 +67,7 @@ import com.schmitzkr.grimreader.ui.formatClock
 import com.schmitzkr.grimreader.ui.formatShort
 import com.schmitzkr.grimreader.ui.formatSpeed
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlin.math.roundToInt
 import javax.inject.Inject
 
 @HiltViewModel
@@ -189,7 +190,7 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
                 Text(formatSpeed(state.speed), style = MaterialTheme.typography.headlineMedium)
                 Slider(
                     value = state.speed.coerceIn(0.5f, 3f),
-                    onValueChange = { player.setSpeed((it * 20).toInt() / 20f) },
+                    onValueChange = { player.setSpeed((it * 20).roundToInt() / 20f) },
                     valueRange = 0.5f..3f,
                     steps = 24,
                 )

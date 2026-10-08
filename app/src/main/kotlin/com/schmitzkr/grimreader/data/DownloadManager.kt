@@ -131,9 +131,18 @@ class DownloadManager @Inject constructor(
     }
 
     fun cancel(bookId: Long) {
-        jobs.remove(bookId)?.cancel()
-        dir(bookId).deleteRecursively()
+        val job = jobs.remove(bookId)
+        job?.cancel()
         _state.update { it - bookId }
+        // Rename (cheap) so a re-download can start clean at once, then delete the
+        // tree off the caller's thread once the cancelled transfer has stopped writing.
+        val d = dir(bookId)
+        val doomed = File(root, "$bookId.deleting-${System.nanoTime()}")
+        val target = if (d.exists() && d.renameTo(doomed)) doomed else d
+        scope.launch {
+            job?.join()
+            target.deleteRecursively()
+        }
     }
 
     fun remove(bookId: Long) = cancel(bookId)
@@ -159,7 +168,9 @@ class DownloadManager @Inject constructor(
                     pages.map { books.comicPageUrl(bookId, it) to "page_%05d".format(it) }
                 }
                 else -> {
-                    val file = book.files.firstOrNull { it.bookType == kind }
+                    // Same pick as Book.fileIdFor: the primary file of this kind first.
+                    val matches = book.files.filter { it.bookType == kind }
+                    val file = matches.firstOrNull { it.isPrimary } ?: matches.firstOrNull()
                     fileId = file?.id
                     listOf(books.downloadUrl(book, fileId) to "book.${(file?.extension ?: kind).lowercase().removePrefix(".")}")
                 }

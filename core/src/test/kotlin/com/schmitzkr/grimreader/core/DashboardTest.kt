@@ -76,4 +76,18 @@ class DashboardTest {
         assertFalse(isNewerVersion(listOf(0, 13), listOf(0, 13, 0)))
         assertFalse(isNewerVersion(listOf(0, 12, 9), listOf(0, 13, 0)))
     }
+
+    @Test
+    fun `descending sort still puts books without the key last`() {
+        val books = listOf(Book(1, "a"), Book(2, "b", seriesNumber = 1.0), Book(3, "c", seriesNumber = 2.0))
+        assertEquals(listOf(3L, 2L, 1L), sortBooks(books, "seriesNumber", "desc").map { it.id })
+    }
+
+    @Test
+    fun `natural compare handles digit runs beyond the Int range transitively`() {
+        assertTrue(naturalCompare("Vol 2", "Vol 10") < 0)
+        assertTrue(naturalCompare("Vol 10", "Vol 9780316769488") < 0)
+        assertTrue(naturalCompare("Vol 2", "Vol 9780316769488") < 0)
+        assertTrue(naturalCompare("Vol 9780316769488", "Vol 9780316769489") < 0)
+    }
 }

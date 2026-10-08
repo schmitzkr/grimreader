@@ -23,15 +23,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -207,7 +210,19 @@ class EpubReaderViewModel @Inject constructor(
                             val fb2 = localFile ?: File(dir, "fb2_${book.id}$suffix.fb2").also { f ->
                                 if (!f.exists() || f.length() == 0L) books.downloadToFile(book, bookFileId, f)
                             }
-                            Fb2ToEpub.convert(fb2, epub)
+                            // Convert into a temp file and rename on success, so a failed or
+                            // interrupted conversion never leaves a partial EPUB that passes
+                            // the exists()/length() cache check above.
+                            val part = File(dir, epub.name + ".part")
+                            var converted = false
+                            try {
+                                Fb2ToEpub.convert(fb2, part)
+                                epub.delete()
+                                check(part.renameTo(epub)) { "Could not finalise converted EPUB" }
+                                converted = true
+                            } finally {
+                                if (!converted) part.delete()
+                            }
                         } else {
                             books.downloadToFile(book, bookFileId, epub)
                         }
@@ -405,7 +420,7 @@ private val readerThemeOptions = listOf(
     ReaderThemeOption("forest", "Forest", Color(0xFF1B2A1E), Color(0xFFDBE8DB)),
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun EpubReaderScreen(
@@ -519,7 +534,9 @@ fun EpubReaderScreen(
             state.loading -> LoadingState()
             state.error != null -> ErrorState(state.error!!, onRetry = { vm.retry() })
             else -> AndroidView(
-                modifier = Modifier.fillMaxSize().systemBarsPadding().padding(bottom = READER_FOOTER_HEIGHT).onSizeChanged { webViewSizePx = it },
+                // systemBarsIgnoringVisibility keeps the padding constant while the bars are hidden,
+                // so toggling the chrome never changes the measured size (and so never re-paginates).
+                modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBarsIgnoringVisibility).padding(bottom = READER_FOOTER_HEIGHT).onSizeChanged { webViewSizePx = it },
                 factory = { ctx ->
                     val loader = WebViewAssetLoader.Builder()
                         .setDomain("appassets.androidplatform.net")
@@ -561,6 +578,14 @@ fun EpubReaderScreen(
                         loadUrl(EpubReaderViewModel.PAGE)
                         webView = this
                     }
+                },
+                onRelease = { view ->
+                    // Stop the page's JS (e.g. locations.generate()) and drop the bridge's
+                    // reference to the ViewModel; otherwise every visit leaks a live WebView.
+                    view.stopLoading()
+                    view.removeJavascriptInterface("Android")
+                    view.destroy()
+                    if (webView === view) webView = null
                 },
             )
         }

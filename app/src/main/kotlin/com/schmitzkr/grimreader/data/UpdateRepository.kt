@@ -7,6 +7,7 @@ import androidx.core.content.FileProvider
 import com.schmitzkr.grimreader.BuildConfig
 import com.schmitzkr.grimreader.core.update.isNewerVersion
 import com.schmitzkr.grimreader.core.update.parseVersion
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -139,6 +140,9 @@ class UpdateRepository @Inject constructor(
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION),
             )
             _state.value = UpdateState.Available(release)
+        } catch (e: CancellationException) {
+            // A cancelled scope is not a failed install: leave the state alone.
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Update install failed", e)
             _state.value = UpdateState.Failed(e.message ?: "Update failed")

@@ -78,7 +78,12 @@ fun sortBooks(books: List<Book>, field: String?, direction: String?): List<Book>
     val keys = books.associate { it.id to sortKey(it, field) }
     if (keys.values.all { it == null }) return books
     val sign = if (direction == "desc") -1 else 1
-    return books.sortedWith { a, b -> sign * compareKeys(keys[a.id], keys[b.id]) }
+    return books.sortedWith { a, b ->
+        val ka = keys[a.id]
+        val kb = keys[b.id]
+        // Missing keys go last in either direction, so only real comparisons flip.
+        if (ka == null || kb == null) compareKeys(ka, kb) else sign * compareKeys(ka, kb)
+    }
 }
 
 private fun sortKey(book: Book, field: String): Comparable<*>? = when (field) {
@@ -112,9 +117,7 @@ fun naturalCompare(a: String, b: String): Int {
     for (i in 0 until minOf(ac.size, bc.size)) {
         val x = ac[i]
         val y = bc[i]
-        val xn = x.toIntOrNull()
-        val yn = y.toIntOrNull()
-        val c = if (xn != null && yn != null) xn.compareTo(yn) else x.compareTo(y)
+        val c = if (x[0].isDigit() && y[0].isDigit()) x.toBigInteger().compareTo(y.toBigInteger()) else x.compareTo(y)
         if (c != 0) return c
     }
     return ac.size.compareTo(bc.size)

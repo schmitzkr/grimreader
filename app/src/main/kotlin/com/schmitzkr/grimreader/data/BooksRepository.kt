@@ -26,18 +26,21 @@ import com.schmitzkr.grimreader.core.model.Library
 import com.schmitzkr.grimreader.core.model.MagicShelf
 import com.schmitzkr.grimreader.core.model.Series
 import com.schmitzkr.grimreader.core.model.Shelf
+import com.schmitzkr.grimreader.core.api.ServerProgress
 import com.schmitzkr.grimreader.core.api.resolveProgress
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import java.io.IOException
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -208,25 +211,28 @@ class BooksRepository @Inject constructor(
     }
 
     /**
-     * The position to open at: a pending local save first, else the server's
-     * copy (remembered for next time), else the local copy when offline.
+     * The position to open at, per [resolveProgress]: a pending local save
+     * first, else what the server says (a body, or nothing on a 404, both
+     * remembered for next time), else the remembered copy when offline.
      * Every load also nudges the pending queue.
      */
     private suspend fun loadProgress(kind: String, bookId: Long): JsonObject? {
         val local = progressStore.get(kind, bookId)
         progressStore.retryPendingLater()
         if (local?.pending == true) return local.body
-        val server: JsonObject? = try {
+        val server: ServerProgress = try {
             val response = api.progress(bookId)
-            when {
+            val body = when {
+                response.isSuccessful -> response.body()
                 response.code() == 404 -> null
-                response.isSuccessful -> response.body()?.also { progressStore.remember(kind, bookId, it) }
                 else -> throw HttpException(response)
             }
+            progressStore.remember(kind, bookId, body)
+            if (body != null) ServerProgress.Found(body) else ServerProgress.None
         } catch (e: HttpException) {
-            if (local == null) throw e else null
+            if (local == null) throw e else ServerProgress.Unreachable
         } catch (e: IOException) {
-            if (local == null) throw e else null
+            if (local == null) throw e else ServerProgress.Unreachable
         }
         return resolveProgress(local, server)
     }
@@ -248,8 +254,17 @@ class BooksRepository @Inject constructor(
         if (!response.isSuccessful) throw HttpException(response)
         val body = response.body() ?: error("Empty download")
         val temp = File(target.parentFile, "${target.name}.part")
-        body.byteStream().use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
-        if (!temp.renameTo(target)) error("Could not move the downloaded file into place")
+        withContext(Dispatchers.IO) {
+            try {
+                body.use { b ->
+                    b.byteStream().use { input -> temp.outputStream().use { output -> input.copyTo(output) } }
+                }
+                if (!temp.renameTo(target)) error("Could not move the downloaded file into place")
+            } catch (e: Throwable) {
+                temp.delete()
+                throw e
+            }
+        }
     }
 
     suspend fun audiobookProgress(bookId: Long): AudiobookProgress? =

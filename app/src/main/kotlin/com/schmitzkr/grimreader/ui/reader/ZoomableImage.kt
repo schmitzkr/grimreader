@@ -29,19 +29,31 @@ import androidx.compose.ui.unit.IntSize
  * landed at (0f left edge, 1f right edge) so a reader can turn pages from
  * the edges and reserve the middle for its own chrome toggle. Pans are
  * clamped so the page never leaves the viewport.
+ *
+ * The zoom belongs to this one box. [onZoomChanged] reports *this box's*
+ * zoom, including an initial `false` when it (re)enters composition --
+ * a caller hosting several boxes (a pager keeps the neighbours composed)
+ * must key what it hears by box, never fold it into one shared flag, or a
+ * neighbour composing would clobber the zoomed page's state. While
+ * [current] is false the box is held at 1× (a pager passes whether this
+ * is its current page), so a page zoomed and then jumped away from is
+ * back to fit when it comes round again.
  */
 @Composable
 fun ZoomableBox(
     modifier: Modifier = Modifier,
     onTap: (xFraction: Float) -> Unit,
     onZoomChanged: (Boolean) -> Unit = {},
-    resetKey: Any? = null,
+    current: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    var scale by remember(resetKey) { mutableFloatStateOf(1f) }
-    LaunchedEffect(scale.isZoomed) { onZoomChanged(scale.isZoomed) }
-    var offset by remember(resetKey) { mutableStateOf(Offset.Zero) }
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
     var size by remember { mutableStateOf(IntSize.Zero) }
+    LaunchedEffect(scale.isZoomed) { onZoomChanged(scale.isZoomed) }
+    LaunchedEffect(current) {
+        if (!current) { scale = 1f; offset = Offset.Zero }
+    }
 
     fun clamp(o: Offset, s: Float): Offset {
         val maxX = (size.width * (s - 1)) / 2
@@ -53,7 +65,7 @@ fun ZoomableBox(
         modifier
             .fillMaxSize()
             .onSizeChanged { size = it }
-            .pointerInput(resetKey) {
+            .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { tap -> onTap(tap.x / size.width.toFloat().coerceAtLeast(1f)) },
                     onDoubleTap = { tap ->
@@ -67,7 +79,7 @@ fun ZoomableBox(
                     },
                 )
             }
-            .pointerInput(resetKey) {
+            .pointerInput(Unit) {
                 // Only a pinch or a zoomed-in drag is ours; an unzoomed
                 // single-finger swipe is left unconsumed for the pager.
                 awaitEachGesture {

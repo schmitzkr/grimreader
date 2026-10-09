@@ -32,6 +32,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,6 +55,7 @@ import com.schmitzkr.grimreader.data.DownloadManager
 import com.schmitzkr.grimreader.ui.formatBytes
 import com.schmitzkr.grimreader.data.Settings
 import com.schmitzkr.grimreader.data.ThemeMode
+import com.schmitzkr.grimreader.data.Release
 import com.schmitzkr.grimreader.data.UpdateRepository
 import com.schmitzkr.grimreader.data.UpdateState
 import androidx.compose.foundation.layout.Spacer
@@ -86,6 +88,8 @@ class SettingsViewModel @Inject constructor(
     val updateState = updates.state
 
     fun checkForUpdates() = viewModelScope.launch { updates.check() }
+
+    fun installUpdate(release: Release) = viewModelScope.launch { updates.install(release) }
 
     /** The What's New sheet needs the latest release even when no check was due. */
     fun ensureLatestKnown() = viewModelScope.launch { if (updates.latest.value == null) updates.check() }
@@ -252,14 +256,25 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                             (latest?.let { " · latest ${it.version}" } ?: ""),
                     ) { whatsNew = true }
                     HorizontalDivider()
-                    Item(
-                        "Check for updates",
-                        when (val u = updateState) {
-                            is UpdateState.Checking -> "Checking…"
-                            is UpdateState.Available -> "Version ${u.release.version} is available on Home"
-                            else -> "Looks for a newer release on GitHub"
-                        },
-                    ) { vm.checkForUpdates() }
+                    when (val u = updateState) {
+                        is UpdateState.Available -> Item(
+                            "Update to ${u.release.version}",
+                            "Download and install the new version",
+                        ) { vm.installUpdate(u.release) }
+                        is UpdateState.Downloading -> Column {
+                            Item("Downloading ${u.release.version}…", "${(u.fraction * 100).toInt()}%")
+                            LinearProgressIndicator(
+                                progress = { u.fraction },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).height(4.dp),
+                                drawStopIndicator = {},
+                            )
+                        }
+                        is UpdateState.Failed -> Item("Update failed", "${u.message} · tap to check again") { vm.checkForUpdates() }
+                        else -> Item(
+                            "Check for updates",
+                            if (updateState is UpdateState.Checking) "Checking…" else "Looks for a newer release on GitHub",
+                        ) { vm.checkForUpdates() }
+                    }
                     HorizontalDivider()
                     ListItem(
                         headlineContent = { Text("GrimReader") },

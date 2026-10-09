@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -84,7 +86,7 @@ class PlayerViewModel @Inject constructor(val player: PlayerController) : ViewMo
 private val speedSteps = listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
 private val sleepPresets = listOf(15, 30, 45, 60)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
     val state by vm.player.state.collectAsStateWithLifecycle()
@@ -237,12 +239,12 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
                     valueRange = 0.5f..3f,
                     steps = 24,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 24.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 24.dp)) {
                     speedSteps.forEach { preset ->
                         FilterChip(
                             selected = kotlin.math.abs(preset - state.speed) < 0.01f,
                             onClick = { player.setSpeed(preset) },
-                            label = { Text(formatSpeed(preset)) },
+                            label = { Text(formatSpeed(preset), maxLines = 1, softWrap = false) },
                         )
                     }
                 }

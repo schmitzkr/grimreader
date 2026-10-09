@@ -633,7 +633,7 @@ fun EpubReaderScreen(
             )
         }
 
-        if (!state.loading && state.error == null) {
+        if (!chrome && !state.loading && state.error == null) {
             // Footer in the strip reserved under the page while the chrome is hidden: where you are, at a
             // glance. With the chrome shown the bottom bar carries the same info, so this would only ghost
             // behind it; the strip stays reserved (WebView padding) so nothing re-paginates.

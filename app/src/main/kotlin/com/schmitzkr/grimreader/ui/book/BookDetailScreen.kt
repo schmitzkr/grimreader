@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.schmitzkr.grimreader.ui.adaptive.ReadableWidth
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -257,6 +258,7 @@ fun BookDetailScreen(
             is BookUiState.Ready -> {
                 val book = s.book
                 val isCurrent = playback.bookId == book.id
+                ReadableWidth(maxWidth = 640.dp) {
                 Column(
                     Modifier
                         .fillMaxSize()
@@ -486,6 +488,7 @@ fun BookDetailScreen(
                             )
                         }
                     }
+                }
                 }
             }
         }

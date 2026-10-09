@@ -179,18 +179,20 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                         }
                     }
                     Text("Accent", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Accent.entries.forEach { option ->
                             val selected = option.name.equals(accent, ignoreCase = true)
                             Box(
                                 Modifier
+                                    .minimumInteractiveComponentSize()
                                     .size(36.dp)
                                     .background(option.color, CircleShape)
                                     .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
-                                    .clickable { vm.setAccent(option) },
+                                    .selectable(selected = selected, role = Role.RadioButton) { vm.setAccent(option) }
+                                    .semantics { contentDescription = option.label },
                                 contentAlignment = Alignment.Center,
                             ) {
-                                if (selected) Icon(Icons.Rounded.Check, option.label, tint = onColorFor(option.color), modifier = Modifier.size(18.dp))
+                                if (selected) Icon(Icons.Rounded.Check, null, tint = onColorFor(option.color), modifier = Modifier.size(18.dp))
                             }
                         }
                     }

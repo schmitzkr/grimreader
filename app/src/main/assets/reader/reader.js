@@ -62,13 +62,14 @@
     return Math.round(((idx + within) / spineCount) * 1000) / 10;
   }
 
-  /* Book-wide "Page n of N" once locations exist; the page within the current section until then. */
+  /*
+   * Always the screen page within the current section. It used to switch to a
+   * book-wide "Page n of N" once epub.js finished generating locations, but a
+   * location is ~1024 characters, not a screen: the number then moved by 0-3
+   * per tap and no longer matched the pages being turned.
+   */
   function pageLabelFor(loc) {
     try {
-      if (locationsReady) {
-        var n = book.locations.locationFromCfi(loc.start.cfi), total = book.locations.length();
-        if (typeof n === 'number' && n >= 0 && total) return 'Page ' + (n + 1) + ' of ' + total;
-      }
       var d = loc.start.displayed;
       if (d && d.total) return 'Page ' + d.page + ' of ' + d.total + ' in section';
     } catch (e) { /* label is cosmetic */ }
@@ -182,6 +183,11 @@
         return afterRelocated(function () { rendition.prev(); });
       }
       quiet = true;
+      // Hide the page while the previous section is shown at its first page and
+      // scrolled to its last: otherwise the first page flashes on screen.
+      var viewer = document.getElementById('viewer');
+      var reveal = function () { if (viewer) viewer.style.opacity = ''; };
+      if (viewer) viewer.style.opacity = '0';
       return rendition.display(prevSec.href).then(settled).then(function () {
         var mm = rendition.manager;
         if (mm && mm.container && typeof mm.scrollTo === 'function' && mm.layout) {
@@ -190,8 +196,14 @@
           else mm.scrollTo(-1 * mm.container.scrollWidth + mm.layout.delta, 0, true);
         }
         quiet = false;
-        return afterRelocated(function () { rendition.reportLocation(); });
-      }).catch(fail).then(function () { quiet = false; });
+        return afterRelocated(function () { rendition.reportLocation(); }).then(function () {
+          reveal();
+          // Diagnostic (logcat tag EpubReader): which section the back-turn targeted and where it landed.
+          var s = lastLoc && lastLoc.start;
+          console.log('back-turn: from=' + (cur && cur.href) + ' to=' + prevSec.href + ' landed=' + (s && s.href) +
+            ' page=' + (s && s.displayed && (s.displayed.page + '/' + s.displayed.total)));
+        });
+      }).catch(fail).then(function () { quiet = false; reveal(); });
     });
   }
 

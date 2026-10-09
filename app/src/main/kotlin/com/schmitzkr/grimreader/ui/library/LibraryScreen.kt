@@ -21,6 +21,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -109,6 +111,8 @@ data class LibraryUiState(
     val typeCounts: Map<TypeFilter, Int> = emptyMap(),
     /** Client-side: only books on this device. */
     val downloadedOnly: Boolean = false,
+    /** True while a pull-to-refresh is in flight. */
+    val refreshing: Boolean = false,
 )
 
 @HiltViewModel
@@ -185,6 +189,12 @@ class LibraryViewModel @Inject constructor(
 
     private var loadJob: Job? = null
 
+    /** Pull-to-refresh: reload the books in place, keeping the grid on screen meanwhile. */
+    fun refresh() {
+        state.update { it.copy(refreshing = true) }
+        load(quiet = true)
+    }
+
     fun load(quiet: Boolean = false) {
         val s = state.value
         // Only the latest request may write: a slower earlier one would overwrite the selected filter's books.
@@ -199,12 +209,13 @@ class LibraryViewModel @Inject constructor(
                     fileTypes = s.type.fileTypes,
                     statuses = s.status.statuses,
                 )
-            }.onSuccess { list -> state.update { it.copy(loading = false, books = list) } }
-                .onFailure { e -> state.update { it.copy(loading = false, error = friendlyError(e)) } }
+            }.onSuccess { list -> state.update { it.copy(loading = false, refreshing = false, books = list) } }
+                .onFailure { e -> state.update { it.copy(loading = false, refreshing = false, error = friendlyError(e)) } }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     libraryId: Long,
@@ -296,14 +307,16 @@ fun LibraryScreen(
                 },
                 art = true,
             )
-            else -> BookGrid(
-                books = shown,
-                coverUrl = vm::coverUrl,
-                onOpen = onOpenBook,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 160.dp),
-                fallbackUrl = vm::fallbackCoverUrl,
-                downloadedIds = downloaded,
-            )
+            else -> PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = vm::refresh) {
+                BookGrid(
+                    books = shown,
+                    coverUrl = vm::coverUrl,
+                    onOpen = onOpenBook,
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 160.dp),
+                    fallbackUrl = vm::fallbackCoverUrl,
+                    downloadedIds = downloaded,
+                )
+            }
         }
     }
 }

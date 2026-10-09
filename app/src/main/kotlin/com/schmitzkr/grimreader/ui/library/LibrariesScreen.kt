@@ -24,6 +24,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -47,7 +49,7 @@ import javax.inject.Inject
 sealed interface LibrariesUiState {
     data object Loading : LibrariesUiState
     data class Error(val message: String) : LibrariesUiState
-    data class Ready(val libraries: List<Library>) : LibrariesUiState
+    data class Ready(val libraries: List<Library>, val refreshing: Boolean = false) : LibrariesUiState
 }
 
 @HiltViewModel
@@ -55,6 +57,17 @@ class LibrariesViewModel @Inject constructor(private val books: BooksRepository)
     val state = MutableStateFlow<LibrariesUiState>(LibrariesUiState.Loading)
 
     init { load() }
+
+    /** Pull-to-refresh: keep the list on screen and reload it in place. */
+    fun refresh() {
+        val current = state.value as? LibrariesUiState.Ready ?: return load()
+        state.value = current.copy(refreshing = true)
+        viewModelScope.launch {
+            runCatching { books.librariesWithCounts() }
+                .onSuccess { state.value = LibrariesUiState.Ready(it) }
+                .onFailure { state.value = current.copy(refreshing = false) }
+        }
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -70,6 +83,7 @@ class LibrariesViewModel @Inject constructor(private val books: BooksRepository)
  * The library list; an account with exactly one library goes straight into
  * it, since a list of one is a detour.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibrariesScreen(
     onOpenLibrary: (Long) -> Unit,
@@ -130,6 +144,7 @@ fun LibrariesScreen(
                     titleOverride = single.name,
                 )
             } else {
+                PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = vm::refresh) {
                 LazyColumn(
                     Modifier.fillMaxSize().statusBarsPadding(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 160.dp),
@@ -157,6 +172,7 @@ fun LibrariesScreen(
                             )
                         }
                     }
+                }
                 }
             }
         }

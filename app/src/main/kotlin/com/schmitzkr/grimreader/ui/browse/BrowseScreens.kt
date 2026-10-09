@@ -29,6 +29,8 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -70,7 +72,7 @@ import javax.inject.Inject
 sealed interface Loaded<out T> {
     data object Loading : Loaded<Nothing>
     data class Error(val message: String) : Loaded<Nothing>
-    data class Ready<T>(val value: T) : Loaded<T>
+    data class Ready<T>(val value: T, val refreshing: Boolean = false) : Loaded<T>
 }
 
 data class BrowseData(
@@ -89,9 +91,16 @@ class BrowseViewModel @Inject constructor(private val books: BooksRepository) : 
     fun coverUrl(bookId: Long, audiobook: Boolean) = books.coverUrl(bookId, audiobook)
     fun photoUrl(author: Author) = books.authorPhotoUrl(author.id)
 
-    fun load() {
+    /** Pull-to-refresh: keep the lists on screen and reload them in place. */
+    fun refresh() {
+        val current = state.value as? Loaded.Ready ?: return load()
+        state.value = current.copy(refreshing = true)
+        load(keepCurrent = current)
+    }
+
+    fun load(keepCurrent: Loaded.Ready<BrowseData>? = null) {
         viewModelScope.launch {
-            state.value = Loaded.Loading
+            if (keepCurrent == null) state.value = Loaded.Loading
             runCatching {
                 coroutineScope {
                     val series = async { books.series() }
@@ -101,7 +110,7 @@ class BrowseViewModel @Inject constructor(private val books: BooksRepository) : 
                     BrowseData(series.await(), authors.await(), shelves.await(), magic.await())
                 }
             }.onSuccess { state.value = Loaded.Ready(it) }
-                .onFailure { state.value = Loaded.Error(friendlyError(it)) }
+                .onFailure { state.value = keepCurrent?.copy(refreshing = false) ?: Loaded.Error(friendlyError(it)) }
         }
     }
 }
@@ -109,6 +118,7 @@ class BrowseViewModel @Inject constructor(private val books: BooksRepository) : 
 private val sections = listOf("Series", "Authors", "Shelves")
 
 /** One tab for the three browse lists, switched with a segmented control. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowseScreen(
     onOpenSeries: (String) -> Unit,
@@ -137,11 +147,13 @@ fun BrowseScreen(
         }
         when (val s = state) {
             Loaded.Loading -> LoadingState()
-            is Loaded.Error -> ErrorState(s.message, onRetry = vm::load)
-            is Loaded.Ready -> when (section) {
-                0 -> SeriesList(s.value.series, vm::coverUrl, onOpenSeries)
-                1 -> AuthorsList(s.value.authors, vm::photoUrl, onOpenAuthor)
-                else -> ShelvesList(s.value.shelves, s.value.magicShelves, onOpenShelf, onOpenMagicShelf)
+            is Loaded.Error -> ErrorState(s.message, onRetry = { vm.load() })
+            is Loaded.Ready -> PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = vm::refresh) {
+                when (section) {
+                    0 -> SeriesList(s.value.series, vm::coverUrl, onOpenSeries)
+                    1 -> AuthorsList(s.value.authors, vm::photoUrl, onOpenAuthor)
+                    else -> ShelvesList(s.value.shelves, s.value.magicShelves, onOpenShelf, onOpenMagicShelf)
+                }
             }
         }
     }
@@ -244,7 +256,10 @@ class BookListViewModel @Inject constructor(private val books: BooksRepository) 
 
     fun coverUrl(book: Book) = books.coverUrl(book)
 
+    private var loader: (suspend () -> List<Book>)? = null
+
     fun start(key: String, load: suspend () -> List<Book>) {
+        loader = load
         if (this.key == key && state.value !is Loaded.Error) return
         this.key = key
         viewModelScope.launch {
@@ -252,6 +267,18 @@ class BookListViewModel @Inject constructor(private val books: BooksRepository) 
             runCatching { load() }
                 .onSuccess { state.value = Loaded.Ready(it) }
                 .onFailure { state.value = Loaded.Error(friendlyError(it)) }
+        }
+    }
+
+    /** Pull-to-refresh: re-run the last load, keeping the books on screen meanwhile. */
+    fun refresh() {
+        val load = loader ?: return
+        val current = state.value as? Loaded.Ready ?: return
+        state.value = current.copy(refreshing = true)
+        viewModelScope.launch {
+            runCatching { load() }
+                .onSuccess { state.value = Loaded.Ready(it) }
+                .onFailure { state.value = current.copy(refreshing = false) }
         }
     }
 
@@ -279,6 +306,7 @@ fun AuthorTitledList(id: Long, vm: BookListViewModel, onBack: () -> Unit, onOpen
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TitledBookList(
     title: String,
@@ -304,12 +332,14 @@ fun TitledBookList(
         when (val s = state) {
             Loaded.Loading -> LoadingState()
             is Loaded.Error -> ErrorState(s.message, onRetry = { start(vm) })
-            is Loaded.Ready -> if (s.value.isEmpty()) EmptyState("Nothing here.") else BookGrid(
-                books = s.value,
-                coverUrl = vm::coverUrl,
-                onOpen = onOpenBook,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 160.dp),
-            )
+            is Loaded.Ready -> PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = vm::refresh) {
+                if (s.value.isEmpty()) EmptyState("Nothing here.") else BookGrid(
+                    books = s.value,
+                    coverUrl = vm::coverUrl,
+                    onOpen = onOpenBook,
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 160.dp),
+                )
+            }
         }
     }
 }

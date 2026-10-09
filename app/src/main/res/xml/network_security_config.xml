@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext decision (see the PR for #169): a network security config cannot
+  express "private IP ranges only": domain-config matches names, not CIDR
+  blocks, so `cleartextTrafficPermitted="false"` in base-config would also
+  break a Grimmory server on a literal LAN address (http://192.168.1.10:6060),
+  a supported setup. On minSdk 26 this file always takes precedence over
+  android:usesCleartextTraffic, which is therefore removed from the manifest.
+
+  The control for plain http is the app-level gate instead: setServer refuses
+  http for every host that is not local-network-like and requires an explicit
+  "insecure connection" confirmation for those that are, GrimmoryClient only
+  ever sends the bearer to the configured server's origin, and OidcFlow
+  requires https for the identity provider. User-installed CAs are not trusted.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

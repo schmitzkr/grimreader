@@ -49,7 +49,11 @@ class OidcFlow @Inject constructor(
     suspend fun begin(provider: OidcProviderDetails) {
         val issuer = provider.issuerUri?.trimEnd('/') ?: error("The server has no OIDC issuer configured.")
         val clientId = provider.clientId ?: error("The server has no OIDC client id configured.")
+        // The sign-in page and the code exchange are only as private as the
+        // IdP's own address; the issuer comes from the server's public settings.
+        requireHttps(issuer, "identity provider")
         val authEndpoint = withContext(Dispatchers.IO) { discoverAuthorizationEndpoint(issuer) }
+        requireHttps(authEndpoint, "identity provider's sign-in page")
         val state = clients.current().api.oidcState()["state"]?.jsonPrimitive?.content
             ?: error("The server did not issue a sign-in state.")
         val verifier = randomToken(64)
@@ -84,6 +88,12 @@ class OidcFlow @Inject constructor(
             codeVerifier = pending.first,
             nonce = pending.second,
         )
+    }
+
+    private fun requireHttps(url: String, what: String) {
+        if (!url.startsWith("https://", ignoreCase = true)) {
+            error("Sign-in was stopped: the $what is not served over https, so your credentials would not be protected.")
+        }
     }
 
     private fun discoverAuthorizationEndpoint(issuer: String): String {

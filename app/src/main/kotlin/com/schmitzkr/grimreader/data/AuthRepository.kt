@@ -3,6 +3,8 @@ package com.schmitzkr.grimreader.data
 import com.schmitzkr.grimreader.core.api.GrimmoryClient
 import com.schmitzkr.grimreader.core.api.LoginRequest
 import com.schmitzkr.grimreader.core.api.RefreshRequest
+import com.schmitzkr.grimreader.core.api.ServerSecurity
+import com.schmitzkr.grimreader.core.api.classifyServerUrl
 import android.net.Uri
 import com.schmitzkr.grimreader.core.model.CurrentUser
 import com.schmitzkr.grimreader.core.model.OidcProviderDetails
@@ -95,8 +97,20 @@ class AuthRepository @Inject constructor(
      */
     private suspend fun client(): GrimmoryClient = clients.client.filterNotNull().first()
 
-    suspend fun setServer(url: String): PublicSettings {
+    /**
+     * Probes and saves the server address. Plain `http` is refused for any
+     * host that is not local-network-like ([RefusedInsecureServerException]),
+     * and for a local one it needs [allowInsecure] -- the user's explicit
+     * "insecure connection" confirmation -- or throws
+     * [InsecureServerConfirmationRequired] so the screen can ask.
+     */
+    suspend fun setServer(url: String, allowInsecure: Boolean = false): PublicSettings {
         val normalized = url.trim().trimEnd('/').let { if (it.contains("://")) it else "https://$it" }
+        when (classifyServerUrl(normalized)) {
+            ServerSecurity.Secure -> {}
+            ServerSecurity.InsecureLocal -> if (!allowInsecure) throw InsecureServerConfirmationRequired()
+            ServerSecurity.Refused -> throw RefusedInsecureServerException()
+        }
         clients.configure(normalized)
         // Probing the public settings both validates the address and tells
         // the login screen whether SSO is on.
@@ -201,3 +215,15 @@ class AuthRepository @Inject constructor(
         signOut()
     }
 }
+
+
+/** A plain `http` address for a host outside the local network: never accepted. */
+class RefusedInsecureServerException : IllegalArgumentException(
+    "Plain http is only allowed for servers on your own network (a local IP address, localhost, or a .local, " +
+        ".lan, .home or .internal name). Use https:// for this server.",
+)
+
+/** A plain `http` address on the local network: accepted only after the user confirms. */
+class InsecureServerConfirmationRequired : IllegalStateException(
+    "This connection is not encrypted.",
+)

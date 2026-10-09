@@ -43,8 +43,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -96,7 +98,7 @@ fun BookCover(
     ) {
         AsyncImage(
             model = if (useFallback && fallbackUrl != null) fallbackUrl else coverUrl,
-            contentDescription = book.title,
+            contentDescription = null,
             contentScale = ContentScale.Crop,
             onError = { if (fallbackUrl != null && !useFallback) useFallback = true },
             modifier = Modifier.fillMaxSize(),
@@ -109,7 +111,7 @@ fun BookCover(
                 .background(Color.Black.copy(alpha = 0.55f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Rounded.DownloadDone, "Downloaded", tint = Color.White, modifier = Modifier.size(14.dp))
+            Icon(Icons.Rounded.DownloadDone, null, tint = Color.White, modifier = Modifier.size(14.dp))
         }
         if (!showProgress) return@Box
         val progress = book.normalizedReadProgress
@@ -147,7 +149,16 @@ fun BookTile(
     fallbackUrl: String? = null,
     downloaded: Boolean = false,
 ) {
-    Column(modifier.clickable(onClick = onClick)) {
+    val progress = book.normalizedReadProgress
+    val state = listOfNotNull(
+        if (book.isFinished) "Finished" else progress?.takeIf { it > 0 }?.let { "${(it * 100).toInt()}% read" },
+        if (downloaded) "Downloaded" else null,
+    ).joinToString(", ")
+    Column(
+        modifier
+            .clickable(onClick = onClick, role = Role.Button)
+            .semantics(mergeDescendants = true) { if (state.isNotEmpty()) stateDescription = state },
+    ) {
         BookCover(book, coverUrl, Modifier.fillMaxWidth(), fallbackUrl = fallbackUrl, downloaded = downloaded)
         Spacer(Modifier.height(6.dp))
         Text(

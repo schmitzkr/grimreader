@@ -43,6 +43,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -204,6 +206,7 @@ fun FilterPill(
     val scheme = MaterialTheme.colorScheme
     val fg = if (selected) scheme.onPrimary else scheme.onSurface
     Surface(
+        selected = selected,
         onClick = onClick,
         shape = CircleShape,
         color = if (selected) scheme.primary else Color.Transparent,
@@ -211,7 +214,11 @@ fun FilterPill(
         modifier = modifier,
     ) {
         Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            Modifier
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = if (count != null) "$label, $count books" else label
+                },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {

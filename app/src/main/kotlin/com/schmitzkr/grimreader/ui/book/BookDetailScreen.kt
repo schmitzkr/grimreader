@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -338,9 +339,9 @@ fun BookDetailScreen(
                             colors = ctaColors,
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                         ) {
-                            Icon(Icons.Rounded.PlayArrow, null)
+                            Icon(if (isCurrent) Icons.Rounded.GraphicEq else Icons.Rounded.PlayArrow, null)
                             Spacer(Modifier.width(8.dp))
-                            Text(if (isCurrent) "Now playing" else if ((progress ?: 0.0) > 0) "Continue" else "Listen")
+                            Text(if (isCurrent) "Open player" else if ((progress ?: 0.0) > 0) "Continue" else "Listen")
                         }
                     } else {
                         val pageFormat = PageFormat.entries.firstOrNull { book.primaryFileType == it.bookType || book.fileIdFor(it) != null }

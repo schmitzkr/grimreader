@@ -230,7 +230,12 @@
         // zone at the wrong fraction of the actual screen, turning a "next page"
         // tap into a "next chapter" jump or the wrong direction entirely.
         var w = currentWidth || contents.window.innerWidth || doc.documentElement.clientWidth || 1;
-        var x = t.clientX / w;
+        // The iframe holds the whole section as one wide strip that the container
+        // scrolls, so t.clientX grows with the page number: on page 3 a left-edge
+        // tap reads as far right and turned forward. Add the iframe's own offset
+        // in the viewport to get the position on screen.
+        var fe = contents.window.frameElement;
+        var x = ((fe ? fe.getBoundingClientRect().left : 0) + t.clientX) / w;
         if (x < 0.3) goPrev();
         else if (x > 0.7) goNext();
         else report('onTap');

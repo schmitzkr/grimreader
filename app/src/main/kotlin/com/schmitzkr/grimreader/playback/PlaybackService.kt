@@ -155,12 +155,29 @@ class PlaybackService : MediaLibraryService() {
     // ── Resolving books ───────────────────────────────────────────────────
 
     private inner class LibraryCallback : MediaLibrarySession.Callback {
+        /**
+         * The session is exported, so only the app itself, the media
+         * notification, Android Auto (and its companion) and system-trusted
+         * controllers (lock screen, Bluetooth, assistant) may connect. Any
+         * other app is rejected before it can browse or drive playback.
+         */
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult =
+            if (isTrusted(session, controller)) MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+            else MediaSession.ConnectionResult.reject()
+
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<MediaItem>> =
-            Futures.immediateFuture(LibraryResult.ofItem(folderItem(ID_ROOT, "GrimReader"), params))
+            if (!isTrusted(session, browser)) {
+                Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED))
+            } else {
+                Futures.immediateFuture(LibraryResult.ofItem(folderItem(ID_ROOT, "GrimReader"), params))
+            }
 
         override fun onGetChildren(
             session: MediaLibrarySession,
@@ -170,6 +187,7 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future(Dispatchers.IO) {
+            if (!isTrusted(session, browser)) return@future LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED)
             runCatching { ImmutableList.copyOf(children(parentId)) }
                 .map { LibraryResult.ofItemList(it, params) }
                 .getOrElse { LibraryResult.ofError(SessionError.ERROR_UNKNOWN) }
@@ -180,6 +198,7 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> = scope.future(Dispatchers.IO) {
+            if (!isTrusted(session, browser)) return@future LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED)
             val id = bookIdOf(mediaId)
             if (id == null) LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
             else runCatching { books.book(id) }
@@ -195,10 +214,14 @@ class PlaybackService : MediaLibraryService() {
             startIndex: Int,
             startPositionMs: Long,
         ): ListenableFuture<MediaItemsWithStartPosition> {
-            val bookId = mediaItems.firstOrNull()?.let { it.bookId ?: bookIdOf(it.mediaId) }
-            if (bookId == null || mediaItems.size != 1 || mediaItems.first().localConfiguration != null) {
-                return Futures.immediateFuture(MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs))
+            // The app's own controller only ever sends a bare `book:<id>`. A URI
+            // would be fetched with the session's credentials, so anything else
+            // (a foreign URI, another id scheme, a queue) is refused.
+            if (mediaItems.size != 1 || !isPlainBookRequest(mediaItems.first())) {
+                return Futures.immediateFailedFuture(UnsupportedOperationException("Only book media ids can be played"))
             }
+            val bookId = bookIdOf(mediaItems.first().mediaId)
+                ?: return Futures.immediateFailedFuture(UnsupportedOperationException("Only book media ids can be played"))
             // Still on the main thread, before anything else: the switch has
             // begun, so the previous book's pause must not rewind its item when
             // the play() that follows this request lands there first.
@@ -268,8 +291,21 @@ class PlaybackService : MediaLibraryService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
-        ): ListenableFuture<MutableList<MediaItem>> = Futures.immediateFuture(mediaItems)
+        ): ListenableFuture<MutableList<MediaItem>> =
+            if (mediaItems.all { isPlainBookRequest(it) }) Futures.immediateFuture(mediaItems)
+            else Futures.immediateFailedFuture(UnsupportedOperationException("Only book media ids can be added"))
     }
+
+    /** A `book:<id>` request carrying no URI of its own. */
+    private fun isPlainBookRequest(item: MediaItem): Boolean =
+        item.localConfiguration == null && bookIdOf(item.mediaId) != null
+
+    private fun isTrusted(session: MediaSession, controller: MediaSession.ControllerInfo): Boolean =
+        controller.packageName == packageName ||
+            session.isMediaNotificationController(controller) ||
+            session.isAutomotiveController(controller) ||
+            session.isAutoCompanionController(controller) ||
+            controller.isTrusted
 
     /** The Android Auto browse tree. */
     private suspend fun children(parentId: String): List<MediaItem> = when {

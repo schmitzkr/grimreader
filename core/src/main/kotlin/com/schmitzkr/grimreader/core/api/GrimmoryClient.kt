@@ -24,6 +24,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Response
 import okhttp3.Route
 import retrofit2.HttpException
@@ -99,6 +101,17 @@ class GrimmoryClient(
     val apiBase: String = "$baseUrl/api/v1/"
     private val apiPrefix: String = java.net.URI(apiBase).rawPath
 
+    /** The one origin the session's tokens may be sent to. */
+    private val serverUrl: HttpUrl = apiBase.toHttpUrl()
+
+    /** Same scheme, host and port as the configured server. */
+    private fun isServerOrigin(url: HttpUrl): Boolean =
+        url.scheme == serverUrl.scheme && url.host == serverUrl.host && url.port == serverUrl.port
+
+    private fun requireServerOrigin(url: HttpUrl) {
+        require(isServerOrigin(url)) { "Refusing to fetch from a host other than the configured server" }
+    }
+
     val json: Json = Json {
         ignoreUnknownKeys = true
         coerceInputValues = true
@@ -120,7 +133,9 @@ class GrimmoryClient(
         .addInterceptor(Interceptor { chain ->
             val request = chain.request()
             val builder = request.newBuilder().header("User-Agent", userAgent)
-            if (!isAuthPath(request.url.encodedPath, apiPrefix)) {
+            // The same client backs the player, artwork loaders and Coil, whose
+            // URLs can come from outside; the bearer goes to the server only.
+            if (isServerOrigin(request.url) && !isAuthPath(request.url.encodedPath, apiPrefix)) {
                 var session = store.current()
                 if (session != null && session.expiresSoon()) {
                     // Best effort: on failure the old token goes out and the
@@ -132,6 +147,7 @@ class GrimmoryClient(
             chain.proceed(builder.build())
         })
         .authenticator(Authenticator { _: Route?, response: Response ->
+            if (!isServerOrigin(response.request.url)) return@Authenticator null
             if (isAuthPath(response.request.url.encodedPath, apiPrefix)) return@Authenticator null
             // One retry per request: a second 401 with a fresh token means
             // the account really is not allowed.
@@ -169,10 +185,13 @@ class GrimmoryClient(
      * The body of [url] fetched through the authenticated client, for a
      * loader outside Retrofit that wants the bytes themselves (notification
      * artwork). Throws [IOException] when the server refuses or sends
-     * nothing; cancelling the caller cancels the call.
+     * nothing; cancelling the caller cancels the call. Throws
+     * [IllegalArgumentException] for a URL outside the server's origin.
      */
     suspend fun fetchBytes(url: String): ByteArray = suspendCancellableCoroutine { cont ->
-        val call = okHttp.newCall(Request.Builder().url(url).build())
+        val request = Request.Builder().url(url).build()
+        requireServerOrigin(request.url)
+        val call = okHttp.newCall(request)
         cont.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
@@ -244,7 +263,7 @@ class GrimmoryClient(
      * A non-2xx answer throws [HttpException] with up to 64 KiB of the body.
      */
     suspend fun downloadToFile(url: String, target: File, onProgress: (Float) -> Unit = {}): Long =
-        withCall(Request.Builder().url(url).build()) { response ->
+        withCall(Request.Builder().url(url).build().also { requireServerOrigin(it.url) }) { response ->
             if (!response.isSuccessful) {
                 throw HttpException(retrofit2.Response.error<Unit>(response.peekBody(ERROR_BODY_LIMIT), response))
             }

@@ -80,6 +80,12 @@ class Settings internal constructor(private val context: Context, private val ci
         if (raw == null) p.remove(PENDING_SESSIONS) else p[PENDING_SESSIONS] = raw
     }
 
+    /** The /me id of the account whose progress, queued sessions and downloads are on this device. */
+    suspend fun deviceOwnerId(): Long? = store.data.first()[DEVICE_OWNER_ID]
+    suspend fun setDeviceOwnerId(id: Long?) = store.edit { p ->
+        if (id == null) p.remove(DEVICE_OWNER_ID) else p[DEVICE_OWNER_ID] = id
+    }
+
     suspend fun lastUpdateCheck(): Instant? = store.data.first()[LAST_UPDATE_CHECK]?.let { Instant.ofEpochMilli(it) }
     suspend fun setLastUpdateCheck(at: Instant) = store.edit { it[LAST_UPDATE_CHECK] = at.toEpochMilli() }
 
@@ -208,6 +214,7 @@ class Settings internal constructor(private val context: Context, private val ci
         val ACCESS_TOKEN = stringPreferencesKey("access_token")
         val REFRESH_TOKEN = stringPreferencesKey("refresh_token")
         val EXPIRES_AT = longPreferencesKey("expires_at")
+        val DEVICE_OWNER_ID = longPreferencesKey("device_owner_id")
         val LAST_UPDATE_CHECK = longPreferencesKey("last_update_check")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
         val READER_NIGHT = booleanPreferencesKey("reader_night")

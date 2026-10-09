@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Cleartext decision (see the PR for #169): a network security config cannot
-  express "private IP ranges only" -- domain-config matches names, not CIDR
+  express "private IP ranges only": domain-config matches names, not CIDR
   blocks, so `cleartextTrafficPermitted="false"` in base-config would also
   break a Grimmory server on a literal LAN address (http://192.168.1.10:6060),
   a supported setup. On minSdk 26 this file always takes precedence over

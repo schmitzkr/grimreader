@@ -204,6 +204,7 @@ private fun MainShell(vm: RootViewModel) {
                 LibrariesScreen(
                     onOpenLibrary = { nav.navigate(Routes.library(it)) },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
+                    onOpenSearch = { nav.navigate(Routes.SEARCH) },
                 )
             }
             composable(Routes.SETTINGS) {
@@ -219,6 +220,7 @@ private fun MainShell(vm: RootViewModel) {
                     libraryId = entry.arguments!!.getLong("id"),
                     onBack = { nav.popBackStack() },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
+                    onOpenSearch = { nav.navigate(Routes.SEARCH) },
                 )
             }
             composable(

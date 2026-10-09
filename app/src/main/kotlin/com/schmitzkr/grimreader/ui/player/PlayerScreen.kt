@@ -3,11 +3,13 @@ package com.schmitzkr.grimreader.ui.player
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,10 +17,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -84,102 +89,133 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
     var sheet by remember { mutableStateOf<String?>(null) }
     var dragging by remember { mutableStateOf<Float?>(null) }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Row(Modifier.fillMaxWidth()) {
-            IconButton(onClick = onBack) { Icon(Icons.Rounded.KeyboardArrowDown, "Close") }
-        }
-        Spacer(Modifier.weight(1f))
-        Box(
-            Modifier
-                .fillMaxWidth(0.72f)
-                .aspectRatio(1f)
-                .shadow(24.dp, RoundedCornerShape(20.dp))
-                .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-        ) {
-            state.artworkUrl?.let {
-                AsyncImage(it, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+        val landscape = maxWidth > maxHeight
+        val artwork: @Composable (Modifier) -> Unit = { mod ->
+            Box(
+                mod
+                    .shadow(24.dp, RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            ) {
+                state.artworkUrl?.let {
+                    AsyncImage(it, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                }
             }
         }
-        Spacer(Modifier.height(28.dp))
-        state.currentChapterIndex?.let { i ->
+        val controls: @Composable ColumnScope.() -> Unit = {
+            state.currentChapterIndex?.let { i ->
+                Text(
+                    "CHAPTER ${i + 1} · ${state.chapters[i].title}".uppercase(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
-                "CHAPTER ${i + 1} · ${state.chapters[i].title}".uppercase(),
-                style = MaterialTheme.typography.labelMedium,
+                state.title,
+                style = MaterialTheme.typography.headlineMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                state.artist,
+                style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-        }
-        Text(
-            state.title,
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            state.artist,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(20.dp))
-        val fraction = dragging ?: state.progress
-        Slider(
-            value = fraction,
-            onValueChange = { dragging = it },
-            onValueChangeFinished = {
-                dragging?.let { player.seekToAbsolute((it * state.durationMs).toLong()) }
-                dragging = null
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatClock((fraction * state.durationMs).toLong()), style = MaterialTheme.typography.bodySmall)
-            Text("-${formatClock(((1 - fraction) * state.durationMs).toLong())}", style = MaterialTheme.typography.bodySmall)
-        }
-        Spacer(Modifier.height(16.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            IconButton(onClick = player::previousTrack, enabled = state.trackCount > 1) {
-                Icon(Icons.Rounded.SkipPrevious, "Previous track", Modifier.size(28.dp))
+            Spacer(Modifier.height(20.dp))
+            val fraction = dragging ?: state.progress
+            Slider(
+                value = fraction,
+                onValueChange = { dragging = it },
+                onValueChangeFinished = {
+                    dragging?.let { player.seekToAbsolute((it * state.durationMs).toLong()) }
+                    dragging = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(formatClock((fraction * state.durationMs).toLong()), style = MaterialTheme.typography.bodySmall)
+                Text("-${formatClock(((1 - fraction) * state.durationMs).toLong())}", style = MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick = player::rewind) { Icon(Icons.Rounded.Replay30, "Back 30 seconds", Modifier.size(36.dp)) }
-            FilledIconButton(
-                onClick = player::togglePlayPause,
-                modifier = Modifier.size(76.dp),
-                shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(),
-            ) {
-                if (state.loading) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp, color = MaterialTheme.colorScheme.onPrimary)
-                else Icon(
-                    if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    if (state.playing) "Pause" else "Play",
-                    Modifier.size(40.dp),
-                )
-            }
-            IconButton(onClick = player::fastForward) { Icon(Icons.Rounded.Forward30, "Forward 30 seconds", Modifier.size(36.dp)) }
-            IconButton(onClick = player::nextTrack, enabled = state.trackCount > 1) {
-                Icon(Icons.Rounded.SkipNext, "Next track", Modifier.size(28.dp))
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                IconButton(onClick = player::previousTrack, enabled = state.trackCount > 1) {
+                    Icon(Icons.Rounded.SkipPrevious, "Previous track", Modifier.size(28.dp))
+                }
+                IconButton(onClick = player::rewind) { Icon(Icons.Rounded.Replay30, "Back 30 seconds", Modifier.size(36.dp)) }
+                FilledIconButton(
+                    onClick = player::togglePlayPause,
+                    modifier = Modifier.size(76.dp),
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(),
+                ) {
+                    if (state.loading) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    else Icon(
+                        if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        if (state.playing) "Pause" else "Play",
+                        Modifier.size(40.dp),
+                    )
+                }
+                IconButton(onClick = player::fastForward) { Icon(Icons.Rounded.Forward30, "Forward 30 seconds", Modifier.size(36.dp)) }
+                IconButton(onClick = player::nextTrack, enabled = state.trackCount > 1) {
+                    Icon(Icons.Rounded.SkipNext, "Next track", Modifier.size(28.dp))
+                }
             }
         }
-        Spacer(Modifier.weight(1f))
-        Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            BottomAction(Icons.Outlined.Speed, formatSpeed(state.speed)) { sheet = "speed" }
-            BottomAction(
-                Icons.Outlined.Bedtime,
-                state.sleepRemainingMs?.let { if (state.sleepAtChapterEnd) "Chapter end" else formatShort(it) } ?: "Sleep",
-            ) { sheet = "sleep" }
-            BottomAction(Icons.Outlined.FormatListBulleted, "Chapters", enabled = state.chapters.isNotEmpty()) { sheet = "chapters" }
-            BottomAction(Icons.Outlined.BookmarkBorder, "Bookmarks") { sheet = "bookmarks" }
+        val actions: @Composable () -> Unit = {
+            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                BottomAction(Icons.Outlined.Speed, formatSpeed(state.speed)) { sheet = "speed" }
+                BottomAction(
+                    Icons.Outlined.Bedtime,
+                    state.sleepRemainingMs?.let { if (state.sleepAtChapterEnd) "Chapter end" else formatShort(it) } ?: "Sleep",
+                ) { sheet = "sleep" }
+                BottomAction(Icons.Outlined.FormatListBulleted, "Chapters", enabled = state.chapters.isNotEmpty()) { sheet = "chapters" }
+                BottomAction(Icons.Outlined.BookmarkBorder, "Bookmarks") { sheet = "bookmarks" }
+            }
+        }
+
+        if (landscape) {
+            // Wider than tall: the artwork takes the left half at the full available height and
+            // the controls scroll in the right half, so nothing is pushed off-screen.
+            Row(Modifier.fillMaxSize().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                    IconButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart)) {
+                        Icon(Icons.Rounded.KeyboardArrowDown, "Close")
+                    }
+                    BoxWithConstraints(Modifier.fillMaxSize().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                        artwork(Modifier.size(minOf(maxWidth * 0.9f, maxHeight)))
+                    }
+                }
+                Spacer(Modifier.width(24.dp))
+                Column(
+                    Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    controls()
+                    Spacer(Modifier.height(8.dp))
+                    actions()
+                }
+            }
+        } else {
+            Column(Modifier.fillMaxSize().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(Modifier.fillMaxWidth()) {
+                    IconButton(onClick = onBack) { Icon(Icons.Rounded.KeyboardArrowDown, "Close") }
+                }
+                // The artwork is sized by the smaller of 72% of the width and the room left over.
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    artwork(Modifier.size(minOf(maxWidth * 0.72f, maxHeight)))
+                }
+                Spacer(Modifier.height(28.dp))
+                controls()
+                Spacer(Modifier.height(16.dp))
+                actions()
+            }
         }
     }
 

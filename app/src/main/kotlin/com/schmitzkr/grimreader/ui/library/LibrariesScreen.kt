@@ -19,7 +19,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.LibraryBooks
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +30,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -88,6 +91,7 @@ class LibrariesViewModel @Inject constructor(private val books: BooksRepository)
 fun LibrariesScreen(
     onOpenLibrary: (Long) -> Unit,
     onOpenBook: (Long) -> Unit,
+    onOpenSearch: () -> Unit,
     vm: LibrariesViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -106,10 +110,7 @@ fun LibrariesScreen(
                         contentPadding = PaddingValues(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 160.dp),
                     ) {
                         item {
-                            Column(Modifier.padding(bottom = 12.dp)) {
-                                Text("THE STACKS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("Libraries", style = MaterialTheme.typography.headlineMedium)
-                            }
+                            LibrariesHeader(onOpenSearch, Modifier.padding(bottom = 12.dp))
                         }
                         items(s.libraries, key = { it.id }) { library ->
                             val isSelected = library.id == selected
@@ -133,6 +134,7 @@ fun LibrariesScreen(
                             onBack = null,
                             onOpenBook = onOpenBook,
                             titleOverride = chosen.name,
+                            onOpenSearch = onOpenSearch,
                         )
                     }
                 }
@@ -142,6 +144,7 @@ fun LibrariesScreen(
                     onBack = null,
                     onOpenBook = onOpenBook,
                     titleOverride = single.name,
+                    onOpenSearch = onOpenSearch,
                 )
             } else {
                 PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = vm::refresh) {
@@ -150,14 +153,7 @@ fun LibrariesScreen(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 160.dp),
                 ) {
                     item {
-                        Column(Modifier.padding(bottom = 12.dp)) {
-                            Text(
-                                "THE STACKS",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text("Libraries", style = MaterialTheme.typography.headlineMedium)
-                        }
+                        LibrariesHeader(onOpenSearch, Modifier.padding(bottom = 12.dp))
                     }
                     items(s.libraries, key = { it.id }) { library ->
                         GrimCard(Modifier.padding(vertical = 6.dp)) {
@@ -176,5 +172,20 @@ fun LibrariesScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LibrariesHeader(onOpenSearch: () -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "THE STACKS",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("Libraries", style = MaterialTheme.typography.headlineMedium)
+        }
+        IconButton(onClick = onOpenSearch) { Icon(Icons.Rounded.Search, "Search") }
     }
 }

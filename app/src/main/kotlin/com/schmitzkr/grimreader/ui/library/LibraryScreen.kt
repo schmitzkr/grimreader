@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -222,6 +223,7 @@ fun LibraryScreen(
     onBack: (() -> Unit)?,
     onOpenBook: (Long) -> Unit,
     titleOverride: String? = null,
+    onOpenSearch: (() -> Unit)? = null,
     vm: LibraryViewModel = hiltViewModel(key = "library-$libraryId"),
 ) {
     LaunchedEffect(libraryId) { vm.start(libraryId); vm.reloadOnProgress() }
@@ -243,6 +245,9 @@ fun LibraryScreen(
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.weight(1f).padding(start = if (onBack == null) 8.dp else 0.dp),
             )
+            if (onOpenSearch != null) {
+                IconButton(onClick = onOpenSearch) { Icon(Icons.Rounded.Search, "Search") }
+            }
             IconButton(onClick = { sortMenu = true }) { Icon(Icons.Rounded.Sort, "Sort") }
             DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                 LibrarySort.entries.forEach { option ->

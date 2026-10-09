@@ -86,6 +86,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -670,7 +673,10 @@ fun EpubReaderScreen(
                             value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
                             onValueChange = { drag = it },
                             onValueChangeFinished = { drag?.let { vm.goToPercentage(it * 100.0) }; drag = null },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).semantics {
+                                contentDescription = "Reading position"
+                                stateDescription = listOf("${(drag?.times(100) ?: state.percentage).toInt()}%", state.pageLabel).filter { it.isNotBlank() }.joinToString(", ")
+                            },
                         )
                         IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
                     }

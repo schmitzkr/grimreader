@@ -6,12 +6,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import com.schmitzkr.grimreader.ui.adaptive.WindowHeight
+import com.schmitzkr.grimreader.ui.adaptive.rememberWindowHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryBooks
@@ -259,14 +264,12 @@ private fun MainShell(vm: RootViewModel) {
         }
 
         // The floating bottom: mini player above the tab bar, both inset
-        // from the edges so nothing touches the screen edge.
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
+        // from the edges so nothing touches the screen edge. On a short
+        // window (a phone in landscape) they sit side by side instead, so
+        // the two do not cover almost half the height.
+        val shortWindow = rememberWindowHeight() == WindowHeight.COMPACT
+        val showPill = playback.hasBook && !onReadingSurface
+        run {
             // Swiping the pill away, either direction, stops playback (the
             // position is saved first) and clears it from the screen. Stopping
             // playback flips `visible` below to false on the same frame the
@@ -280,8 +283,9 @@ private fun MainShell(vm: RootViewModel) {
             // meant to preserve through the exit animation.
             var dismissedBySwipe by remember { mutableStateOf(false) }
             LaunchedEffect(playback.hasBook) { if (playback.hasBook) dismissedBySwipe = false }
+            val pill: @Composable () -> Unit = {
             AnimatedVisibility(
-                visible = playback.hasBook && !onReadingSurface,
+                visible = showPill,
                 enter = slideInVertically { it } + fadeIn(),
                 exit = if (dismissedBySwipe) ExitTransition.None else slideOutVertically { it } + fadeOut(),
             ) {
@@ -309,6 +313,8 @@ private fun MainShell(vm: RootViewModel) {
                     )
                 }
             }
+            }
+            val bar: @Composable () -> Unit = {
             AnimatedVisibility(visible = onTab, enter = fadeIn(), exit = fadeOut()) {
                 FloatingNavBar(
                     items = tabs,
@@ -317,6 +323,26 @@ private fun MainShell(vm: RootViewModel) {
                     }?.route,
                     onSelect = { route -> nav.navigateToTab(route) },
                 )
+            }
+            }
+            val chrome = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 8.dp)
+            if (shortWindow) {
+                Row(
+                    modifier = chrome.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    if (showPill) Box(Modifier.weight(1f)) { pill() }
+                    bar()
+                }
+            } else {
+                Column(modifier = chrome, horizontalAlignment = Alignment.CenterHorizontally) {
+                    pill()
+                    bar()
+                }
             }
         }
     }

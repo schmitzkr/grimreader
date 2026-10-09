@@ -51,8 +51,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
-import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
+import com.schmitzkr.grimreader.core.files.SafeFiles
 import com.schmitzkr.grimreader.core.model.Book
 import com.schmitzkr.grimreader.core.model.BookFile
 import com.schmitzkr.grimreader.core.model.FileReader
@@ -153,13 +153,20 @@ class BookDetailViewModel @Inject constructor(
         opening.value = file.id
         viewModelScope.launch {
             runCatching {
+                // Only fixed ebook/comic/text types may leave the app: the extension
+                // is the server's word, and an APK here would reach the installer.
+                val ext = SafeFiles.openableExtension(file.extension ?: file.fileName?.substringAfterLast('.', ""))
+                val mime = ext?.let { SafeFiles.openableMime(it) }
+                if (ext == null || mime == null) {
+                    message.value = "GrimReader won't open this kind of file (${file.extension ?: file.fileName ?: "unknown type"}) with another app."
+                    return@runCatching
+                }
                 val dir = File(context.cacheDir, "share").apply { mkdirs() }
-                val name = (file.fileName ?: "${book.title}.${file.extension ?: "bin"}").replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                val target = File(dir, "${book.id}-${file.id}-$name")
+                val target = File(dir, "${book.id}-${file.id}.$ext")
                 if (!target.exists() || target.length() == 0L) books.downloadToFile(book, file.id, target)
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", target)
                 val view = Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(uri, mimeTypeFor(file.extension ?: target.extension))
+                    .setDataAndType(uri, mime)
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 context.startActivity(Intent.createChooser(view, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }.onFailure { message.value = friendlyError(it) }
@@ -519,20 +526,6 @@ private fun noReaderExplainer(type: String?): String = when (type) {
     "MOBI", "AZW3" -> "GrimReader has no $type reader yet. Open it with another app, or ask your server admin to add an EPUB copy of this book."
     null -> "This book has no readable file."
     else -> "GrimReader has no $type reader yet. Open it with another app instead."
-}
-
-private fun mimeTypeFor(extension: String): String {
-    val ext = extension.lowercase().removePrefix(".")
-    return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: when (ext) {
-        "mobi", "prc" -> "application/x-mobipocket-ebook"
-        "azw", "azw3", "kfx" -> "application/vnd.amazon.ebook"
-        "epub" -> "application/epub+zip"
-        "fb2" -> "application/x-fictionbook+xml"
-        "cbz" -> "application/vnd.comicbook+zip"
-        "cbr" -> "application/vnd.comicbook-rar"
-        "cb7" -> "application/x-cb7"
-        else -> "*/*"
-    }
 }
 
 /** Descriptions arrive as HTML from most metadata sources. */

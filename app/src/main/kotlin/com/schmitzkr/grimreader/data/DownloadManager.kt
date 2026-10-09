@@ -2,6 +2,7 @@ package com.schmitzkr.grimreader.data
 
 import android.content.Context
 import android.util.Log
+import com.schmitzkr.grimreader.core.files.SafeFiles
 import com.schmitzkr.grimreader.core.model.AudiobookInfo
 import com.schmitzkr.grimreader.core.model.Book
 import com.schmitzkr.grimreader.ui.friendlyError
@@ -217,12 +218,13 @@ class DownloadManager @Inject constructor(
                     val matches = book.files.filter { it.bookType == kind }
                     val file = matches.firstOrNull { it.isPrimary } ?: matches.firstOrNull()
                     fileId = file?.id
-                    listOf(books.downloadUrl(book, fileId) to "book.${(file?.extension ?: kind).lowercase().removePrefix(".")}")
+                    listOf(books.downloadUrl(book, fileId) to "book.${SafeFiles.sanitizeExtension(file?.extension, kind)}")
                 }
             }
             var bytes = 0L
             targets.forEachIndexed { i, (url, name) ->
                 val target = File(dir, name)
+                check(target.canonicalFile.parentFile == dir.canonicalFile) { "Refusing a download file name outside the book directory" }
                 // A file is only ever renamed into place once complete, so an
                 // existing one is a finished piece of an interrupted download.
                 bytes += if (target.isFile && target.length() > 0) target.length()
@@ -309,7 +311,8 @@ class DownloadManager @Inject constructor(
 
         fun extensionOf(fileName: String): String {
             val dot = fileName.lastIndexOf('.')
-            return if (dot > 0 && dot < fileName.length - 1) fileName.substring(dot) else ""
+            val ext = if (dot > 0 && dot < fileName.length - 1) SafeFiles.sanitizeExtension(fileName.substring(dot + 1)) else ""
+            return if (ext.isEmpty()) "" else ".$ext"
         }
     }
 }

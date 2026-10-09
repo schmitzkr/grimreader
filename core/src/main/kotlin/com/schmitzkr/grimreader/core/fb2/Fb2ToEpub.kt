@@ -5,6 +5,7 @@ import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.InputStream
 import java.io.OutputStream
 import java.util.Base64
 import java.util.UUID
@@ -23,15 +24,78 @@ import javax.xml.parsers.DocumentBuilderFactory
  */
 object Fb2ToEpub {
 
+    /** Largest FB2 accepted, as stored or inflated from a `.fb2.zip`. */
+    const val MAX_FB2_BYTES: Long = 64L * 1024 * 1024
+
+    /** Largest decoded size of a single `<binary>`; bigger ones are skipped. */
+    const val MAX_BINARY_BYTES: Long = 32L * 1024 * 1024
+
+    /** Budget for all decoded `<binary>` data together; images past it are skipped. */
+    const val MAX_TOTAL_BINARY_BYTES: Long = 128L * 1024 * 1024
+
+    /** Deepest element nesting walked while collecting ids and rendering. */
+    const val MAX_DEPTH: Int = 64
+
+    /** How much of the start of the XML is scanned for a DOCTYPE. */
+    private const val DOCTYPE_SCAN_BYTES = 16 * 1024
+
+    internal class Limits(
+        val maxFb2Bytes: Long = MAX_FB2_BYTES,
+        val maxBinaryBytes: Long = MAX_BINARY_BYTES,
+        val maxTotalBinaryBytes: Long = MAX_TOTAL_BINARY_BYTES,
+        val maxDepth: Int = MAX_DEPTH,
+    )
+
     fun convert(input: File, output: File) {
-        val bytes = unwrap(input.readBytes())
-        output.outputStream().use { convert(bytes, it) }
+        convert(input, output, Limits())
+    }
+
+    internal fun convert(input: File, output: File, limits: Limits) {
+        val bytes = input.inputStream().use { readCapped(it, limits.maxFb2Bytes, "FB2 file") }
+        output.outputStream().use { convert(bytes, it, limits) }
     }
 
     fun convert(fb2: ByteArray, output: OutputStream) {
-        val doc = parse(unwrap(fb2))
-        val book = read(doc)
+        convert(fb2, output, Limits())
+    }
+
+    internal fun convert(fb2: ByteArray, output: OutputStream, limits: Limits) {
+        if (fb2.size > limits.maxFb2Bytes) throw IllegalArgumentException("FB2 file is larger than ${limits.maxFb2Bytes} bytes")
+        val xml = unwrap(fb2, limits)
+        rejectDoctype(xml)
+        val doc = parse(xml)
+        val book = read(doc, limits)
         write(book, output)
+    }
+
+    /** Copies [input] into memory, failing as soon as more than [max] bytes have been read. */
+    private fun readCapped(input: InputStream, max: Long, what: String): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            total += n
+            if (total > max) throw IllegalArgumentException("$what is larger than $max bytes")
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
+
+    /**
+     * Android's DocumentBuilderFactory refuses the Xerces hardening features, so
+     * they cannot be relied on; a DOCTYPE is never valid FB2, so refuse it here.
+     * ASCII-compatible encodings are matched directly; UTF-16 is matched after
+     * dropping NULs.
+     */
+    private fun rejectDoctype(xml: ByteArray) {
+        val head = xml.copyOf(minOf(xml.size, DOCTYPE_SCAN_BYTES))
+        val ascii = String(head, Charsets.ISO_8859_1)
+        val flattened = ascii.replace("\u0000", "")
+        if (ascii.contains("<!DOCTYPE", ignoreCase = true) || flattened.contains("<!DOCTYPE", ignoreCase = true)) {
+            throw IllegalArgumentException("FB2 with a DOCTYPE declaration is not accepted")
+        }
     }
 
     // ── Reading ───────────────────────────────────────────────────────────
@@ -46,17 +110,18 @@ object Fb2ToEpub {
         val coverId: String?,
         val chapters: List<Chapter>,
         val images: List<Image>,
+        val maxDepth: Int,
     )
 
     /** A `.fb2.zip` holds one FB2 inside; anything else is the XML itself. */
-    private fun unwrap(bytes: ByteArray): ByteArray {
+    private fun unwrap(bytes: ByteArray, limits: Limits): ByteArray {
         if (bytes.size < 4 || bytes[0] != 'P'.code.toByte() || bytes[1] != 'K'.code.toByte()) return bytes
         ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
             var entry = zip.nextEntry
             var fallback: ByteArray? = null
             while (entry != null) {
                 if (!entry.isDirectory) {
-                    val data = zip.readBytes()
+                    val data = readCapped(zip, limits.maxFb2Bytes, "Inflated FB2")
                     if (entry.name.lowercase().endsWith(".fb2")) return data
                     if (fallback == null) fallback = data
                 }
@@ -70,13 +135,14 @@ object Fb2ToEpub {
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = false
             isExpandEntityReferences = false
+            // Best effort: Android's factory throws here. rejectDoctype() is the guarantee.
             runCatching { setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true) }
             runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
         }
         return factory.newDocumentBuilder().parse(ByteArrayInputStream(xml))
     }
 
-    private fun read(doc: Document): Fb2Book {
+    private fun read(doc: Document, limits: Limits): Fb2Book {
         val root = doc.documentElement
         val description = root.child("description")
         val titleInfo = description?.child("title-info")
@@ -90,10 +156,17 @@ object Fb2ToEpub {
             .ifBlank { "urn:uuid:${UUID.nameUUIDFromBytes(title.toByteArray())}" }
         val coverId = titleInfo?.child("coverpage")?.child("image")?.href()?.removePrefix("#")
 
+        var binaryTotal = 0L
         val images = root.children("binary").mapNotNull { b ->
             val id = b.getAttribute("id").ifBlank { return@mapNotNull null }
             val type = b.getAttribute("content-type").ifBlank { "image/jpeg" }
-            val data = runCatching { Base64.getMimeDecoder().decode(b.text().trim()) }.getOrNull() ?: return@mapNotNull null
+            val encoded = b.text().trim()
+            // Upper bound on the decoded size, checked before allocating it.
+            val estimate = encoded.length.toLong() / 4 * 3
+            if (estimate > limits.maxBinaryBytes + 3 || binaryTotal + estimate > limits.maxTotalBinaryBytes + 3) return@mapNotNull null
+            val data = runCatching { Base64.getMimeDecoder().decode(encoded) }.getOrNull() ?: return@mapNotNull null
+            if (data.size > limits.maxBinaryBytes || binaryTotal + data.size > limits.maxTotalBinaryBytes) return@mapNotNull null
+            binaryTotal += data.size
             Image(safeName(id), type, data)
         }.distinctBy { it.id } // ids that fold to the same file name would collide in the zip
 
@@ -122,13 +195,18 @@ object Fb2ToEpub {
             }
         }
         if (chapters.isEmpty()) add(title, emptyList())
-        chapters.forEach { c -> c.sources.forEach { collectIds(it, c.ids) } }
-        return Fb2Book(title, authors, language, identifier, coverId?.let(::safeName), chapters, images)
+        chapters.forEach { c -> c.sources.forEach { collectIds(it, c.ids, 1, limits.maxDepth) } }
+        return Fb2Book(title, authors, language, identifier, coverId?.let(::safeName), chapters, images, limits.maxDepth)
     }
 
-    private fun collectIds(el: Element, out: MutableSet<String>) {
+    private fun collectIds(el: Element, out: MutableSet<String>, depth: Int, maxDepth: Int) {
+        checkDepth(depth, maxDepth)
         el.getAttribute("id").takeIf { it.isNotBlank() }?.let { out += it }
-        el.elements().forEach { collectIds(it, out) }
+        el.elements().forEach { collectIds(it, out, depth + 1, maxDepth) }
+    }
+
+    private fun checkDepth(depth: Int, maxDepth: Int) {
+        if (depth > maxDepth) throw IllegalArgumentException("FB2 is nested more than $maxDepth levels deep")
     }
 
     // ── Writing ───────────────────────────────────────────────────────────
@@ -202,7 +280,19 @@ object Fb2ToEpub {
     private class RenderContext(private val book: Fb2Book) {
         private fun chapterFor(id: String): Chapter? = book.chapters.firstOrNull { id in it.ids }
 
+        private var depth = 0
+
         fun render(el: Element, sb: StringBuilder) {
+            depth++
+            try {
+                checkDepth(depth, book.maxDepth)
+                renderElement(el, sb)
+            } finally {
+                depth--
+            }
+        }
+
+        private fun renderElement(el: Element, sb: StringBuilder) {
             when (el.tagName) {
                 "p" -> block("p", el, sb)
                 "v" -> block("p", el, sb, "v")

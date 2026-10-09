@@ -168,7 +168,15 @@ class AuthRepository @Inject constructor(
         } catch (e: Exception) {
             null
         }
-        if (fetched != null) _currentUser.value = fetched
+        if (fetched != null) {
+            // A different account than the one whose data is on this device
+            // (a sign-in after an expiry): drop it before [currentUser]
+            // changes, since that is what fires the progress/session retries.
+            val owner = settings.deviceOwnerId()
+            if (shouldForgetDeviceState(owner, fetched.id)) forgetDeviceState()
+            if (owner != fetched.id) settings.setDeviceOwnerId(fetched.id)
+            _currentUser.value = fetched
+        }
     }
 
     /**
@@ -181,6 +189,7 @@ class AuthRepository @Inject constructor(
         // a process death right after this cannot bring the account back.
         sessionStore.flush()
         forgetDeviceState()
+        settings.setDeviceOwnerId(null)
         _currentUser.value = null
         _state.value = AppState.SignedOut()
     }
@@ -201,7 +210,9 @@ class AuthRepository @Inject constructor(
      * the state flips so nothing of the old account is still around when
      * the next one's [currentUser] triggers the retry queues. An expired
      * session keeps it: that is normally the same account coming back,
-     * and losing offline progress to a dead token would be the worse bug.
+     * and losing offline progress to a dead token would be the worse bug;
+     * if a different account signs in afterwards, [refreshCurrentUser] sees
+     * the owner id differ and drops it then.
      */
     private suspend fun forgetDeviceState() {
         progress.get().clear()
@@ -227,3 +238,13 @@ class RefusedInsecureServerException : IllegalArgumentException(
 class InsecureServerConfirmationRequired : IllegalStateException(
     "This connection is not encrypted.",
 )
+
+/**
+ * Whether the device-local state of [ownerId] (the account it was recorded
+ * for; null when unknown, e.g. data from before owners were recorded) must
+ * be dropped for [incomingId] signing in. Only a known, different owner
+ * forgets: the same account coming back after an expiry keeps its offline
+ * progress and downloads.
+ */
+internal fun shouldForgetDeviceState(ownerId: Long?, incomingId: Long): Boolean =
+    ownerId != null && ownerId != incomingId

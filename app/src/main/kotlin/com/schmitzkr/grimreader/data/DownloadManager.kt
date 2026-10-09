@@ -260,6 +260,9 @@ class DownloadManager @Inject constructor(
 
     /** Finished downloads reappear from disk; a directory without a record is a torn download. */
     private fun scan() {
+        // A cancel/remove that died between its rename and its delete leaves
+        // a `*.deleting-*` directory behind; nothing else would ever reclaim it.
+        root.listFiles { f -> isDoomedDirName(f.name) }?.forEach { it.deleteRecursively() }
         val dirs = root.listFiles { f -> f.isDirectory } ?: return
         val found = dirs.mapNotNull { d ->
             val id = d.name.toLongOrNull() ?: return@mapNotNull null
@@ -306,6 +309,10 @@ class DownloadManager @Inject constructor(
             else -> book.primaryFileType?.takeIf { it in READABLE }
                 ?: READABLE.firstOrNull { k -> book.files.any { it.bookType == k } }
         }
+
+        /** A directory [cancel] renamed for deletion: `<bookId>.deleting-<nanos>`. */
+        fun isDoomedDirName(name: String): Boolean = name.contains(".deleting-")
+
         const val RECORD = "record.json"
         const val COVER = "cover.jpg"
 

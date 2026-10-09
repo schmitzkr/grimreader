@@ -110,9 +110,14 @@ class HomeViewModel @Inject constructor(
             else if (!quiet) _state.value = HomeUiState.Loading
             runCatching {
                 val scrollers = normalizeDashboard(books.dashboardConfig())
-                val serverRows = coroutineScope {
+                val results = coroutineScope {
                     scrollers.map { s -> async { loadRow(s) } }.map { it.await() }
                 }.filterNotNull()
+                // Every server row failing means we are offline or the server is down, not
+                // that the library is empty: surface the error (and Retry) instead of rows
+                // of "Nothing here yet.". A previous Ready state is kept by onFailure.
+                if (results.isNotEmpty() && results.all { it.isFailure }) throw results.first().exceptionOrNull()!!
+                val serverRows = results.mapNotNull { it.getOrNull() }
                 (serverRows + appRows()).filter { !(it.kind.hidesWhenEmpty && it.books.isEmpty()) }
             }.onSuccess { _state.value = HomeUiState.Ready(it) }
                 .onFailure {
@@ -147,11 +152,12 @@ class HomeViewModel @Inject constructor(
         return rows
     }
 
-    private suspend fun loadRow(s: DashboardScroller): HomeRow? {
+    /** Null when the scroller has no known kind; a failed Result when its fetch threw. */
+    private suspend fun loadRow(s: DashboardScroller): Result<HomeRow>? {
         val kind = s.kind ?: return null
         val max = s.maxItems?.takeIf { it > 0 } ?: DASHBOARD_MAX_ITEMS
-        val list = runCatching {
-            when (kind) {
+        return runCatching {
+            val list = when (kind) {
                 ScrollerKind.LAST_LISTENED -> books.continueListening(max)
                 ScrollerKind.LAST_READ -> books.continueReading(max)
                 ScrollerKind.LATEST_ADDED -> books.recentlyAdded(max)
@@ -162,14 +168,14 @@ class HomeViewModel @Inject constructor(
                 // Never in a server layout; built by appRows instead.
                 ScrollerKind.UP_NEXT, ScrollerKind.RECENTLY_FINISHED -> emptyList()
             }
-        }.getOrElse { emptyList() }
-        return HomeRow(
-            key = s.id ?: "${s.type}-${s.order}",
-            title = scrollerTitle(s),
-            kind = kind,
-            books = list,
-            magicShelfId = s.magicShelfId,
-        )
+            HomeRow(
+                key = s.id ?: "${s.type}-${s.order}",
+                title = scrollerTitle(s),
+                kind = kind,
+                books = list,
+                magicShelfId = s.magicShelfId,
+            )
+        }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
     }
 }
 

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.security.GeneralSecurityException
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,7 +35,9 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /** Every persisted preference, as one typed surface over DataStore. */
 @Singleton
-class Settings @Inject constructor(private val context: Context) {
+class Settings internal constructor(private val context: Context, private val cipher: SessionCipher) {
+    @Inject constructor(context: Context) : this(context, KeystoreCipher())
+
     private val store get() = context.dataStore
 
     val serverUrl: Flow<String?> = store.data.map { it[SERVER_URL] }
@@ -128,16 +131,26 @@ class Settings @Inject constructor(private val context: Context) {
     // process still finds its PKCE verifier and nonce. Cleared on use.
 
     suspend fun storeOidcPending(state: String, verifier: String, nonce: String) = store.edit { p ->
-        p[stringPreferencesKey("oidc_pending_$state")] = "$verifier\n$nonce"
+        val now = System.currentTimeMillis()
+        // Sweep abandoned flows on every write; legacy unstamped entries have no age, so they go too.
+        p.asMap().keys.filter { it.name.startsWith(OIDC_PENDING_PREFIX) }.forEach { k ->
+            val stamp = (p[k] as? String)?.let(::pendingStamp)
+            if (stamp == null || PendingExpiry.isStale(stamp, now)) p.remove(k)
+        }
+        p[stringPreferencesKey("$OIDC_PENDING_PREFIX$state")] = "$now\n$verifier\n$nonce"
     }
 
     suspend fun takeOidcPending(state: String): Pair<String, String>? {
-        val key = stringPreferencesKey("oidc_pending_$state")
+        val key = stringPreferencesKey("$OIDC_PENDING_PREFIX$state")
         val raw = store.data.first()[key] ?: return null
         store.edit { it.remove(key) }
         val parts = raw.split('\n')
-        return if (parts.size == 2) parts[0] to parts[1] else null
+        val stamp = pendingStamp(raw)
+        if (parts.size != 3 || stamp == null || PendingExpiry.isStale(stamp, System.currentTimeMillis())) return null
+        return parts[1] to parts[2]
     }
+
+    private fun pendingStamp(raw: String): Long? = raw.substringBefore('\n').toLongOrNull()
 
     // ── Session ───────────────────────────────────────────────────────────
 
@@ -145,20 +158,47 @@ class Settings @Inject constructor(private val context: Context) {
         val p = store.data.first()
         val access = p[ACCESS_TOKEN] ?: return null
         val refresh = p[REFRESH_TOKEN] ?: return null
-        return Session(access, refresh, p[EXPIRES_AT]?.let { Instant.ofEpochMilli(it) })
+        val expiresAt = p[EXPIRES_AT]?.let { Instant.ofEpochMilli(it) }
+        val session = try {
+            Session(unwrap(access), unwrap(refresh), expiresAt)
+        } catch (e: GeneralSecurityException) {
+            // A lost or invalidated key: the tokens are unrecoverable, so the user signs in again.
+            Log.w(TAG, "Could not unwrap the stored session; treating it as signed out", e)
+            store.edit { it.remove(ACCESS_TOKEN); it.remove(REFRESH_TOKEN); it.remove(EXPIRES_AT) }
+            return null
+        }
+        if (!WrappedFormat.isWrapped(access) || !WrappedFormat.isWrapped(refresh)) {
+            // Legacy plaintext: re-save wrapped. Best effort; the session itself is still good.
+            try {
+                writeSession(session)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not migrate the stored session", e)
+            }
+        }
+        return session
     }
 
-    suspend fun writeSession(session: Session?) = store.edit { p ->
-        if (session == null) {
-            p.remove(ACCESS_TOKEN); p.remove(REFRESH_TOKEN); p.remove(EXPIRES_AT)
-        } else {
-            p[ACCESS_TOKEN] = session.accessToken
-            p[REFRESH_TOKEN] = session.refreshToken
-            session.expiresAt?.let { p[EXPIRES_AT] = it.toEpochMilli() } ?: p.remove(EXPIRES_AT)
+    private fun unwrap(stored: String): String = if (WrappedFormat.isWrapped(stored)) cipher.decrypt(stored) else stored
+
+    suspend fun writeSession(session: Session?) {
+        // Wrap outside the edit lambda so a Keystore failure never leaves a half-written session.
+        val wrapped = session?.let { cipher.encrypt(it.accessToken) to cipher.encrypt(it.refreshToken) }
+        store.edit { p ->
+            if (session == null || wrapped == null) {
+                p.remove(ACCESS_TOKEN); p.remove(REFRESH_TOKEN); p.remove(EXPIRES_AT)
+            } else {
+                p[ACCESS_TOKEN] = wrapped.first
+                p[REFRESH_TOKEN] = wrapped.second
+                session.expiresAt?.let { p[EXPIRES_AT] = it.toEpochMilli() } ?: p.remove(EXPIRES_AT)
+            }
         }
     }
 
     companion object {
+        private const val TAG = "Settings"
+        private const val OIDC_PENDING_PREFIX = "oidc_pending_"
         val SERVER_URL = stringPreferencesKey("server_url")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val ACCENT = stringPreferencesKey("accent")

@@ -196,13 +196,7 @@
           else mm.scrollTo(-1 * mm.container.scrollWidth + mm.layout.delta, 0, true);
         }
         quiet = false;
-        return afterRelocated(function () { rendition.reportLocation(); }).then(function () {
-          reveal();
-          // Diagnostic (logcat tag EpubReader): which section the back-turn targeted and where it landed.
-          var s = lastLoc && lastLoc.start;
-          console.log('back-turn: from=' + (cur && cur.href) + ' to=' + prevSec.href + ' landed=' + (s && s.href) +
-            ' page=' + (s && s.displayed && (s.displayed.page + '/' + s.displayed.total)));
-        });
+        return afterRelocated(function () { rendition.reportLocation(); }).then(reveal);
       }).catch(fail).then(function () { quiet = false; reveal(); });
     });
   }

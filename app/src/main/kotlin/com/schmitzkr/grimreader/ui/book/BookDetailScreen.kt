@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -25,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.schmitzkr.grimreader.ui.adaptive.ReadableWidth
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -236,6 +238,14 @@ fun BookDetailScreen(
     val message by vm.message.collectAsStateWithLifecycle()
     val sending by vm.sending.collectAsStateWithLifecycle()
     val user by vm.user.collectAsStateWithLifecycle()
+    var removeConfirm by remember { mutableStateOf<Long?>(null) }
+    removeConfirm?.let { bytes ->
+        com.schmitzkr.grimreader.ui.downloads.RemoveDownloadDialog(
+            bytes,
+            onConfirm = { (state as? BookUiState.Ready)?.let { vm.downloads.remove(it.book.id) }; removeConfirm = null },
+            onDismiss = { removeConfirm = null },
+        )
+    }
 
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -248,6 +258,7 @@ fun BookDetailScreen(
             is BookUiState.Ready -> {
                 val book = s.book
                 val isCurrent = playback.bookId == book.id
+                ReadableWidth(maxWidth = 640.dp) {
                 Column(
                     Modifier
                         .fillMaxSize()
@@ -330,9 +341,9 @@ fun BookDetailScreen(
                             colors = ctaColors,
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                         ) {
-                            Icon(Icons.Rounded.PlayArrow, null)
+                            Icon(if (isCurrent) Icons.Rounded.GraphicEq else Icons.Rounded.PlayArrow, null)
                             Spacer(Modifier.width(8.dp))
-                            Text(if (isCurrent) "Now playing" else if ((progress ?: 0.0) > 0) "Continue" else "Listen")
+                            Text(if (isCurrent) "Open player" else if ((progress ?: 0.0) > 0) "Continue" else "Listen")
                         }
                     } else {
                         val pageFormat = PageFormat.entries.firstOrNull { book.primaryFileType == it.bookType || book.fileIdFor(it) != null }
@@ -389,7 +400,7 @@ fun BookDetailScreen(
                                 Spacer(Modifier.width(8.dp))
                                 Text(if (dl.status == DownloadStatus.QUEUED) "Waiting… · Cancel" else "Downloading ${(dl.fraction * 100).toInt()}% · Cancel")
                             }
-                            else -> OutlinedButton(onClick = { vm.downloads.remove(book.id) }, modifier = Modifier.fillMaxWidth()) {
+                            else -> OutlinedButton(onClick = { removeConfirm = dl.bytes }, modifier = Modifier.fillMaxWidth()) {
                                 Icon(Icons.Rounded.DownloadDone, null)
                                 Spacer(Modifier.width(8.dp))
                                 Text("On this device · ${formatBytes(dl.bytes)} · Remove")
@@ -477,6 +488,7 @@ fun BookDetailScreen(
                             )
                         }
                     }
+                }
                 }
             }
         }

@@ -38,12 +38,21 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Validate version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version"; exit 1; }
+
       - name: Stamp version
+        env:
+          VERSION: ${{ inputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
           # Offset so version codes continue past an earlier line of builds.
-          sed -i "s/versionCode = [0-9]*/versionCode = $(( ${{ github.run_number }} + 100 ))/" app/build.gradle.kts
-          sed -i "s/versionName = \"[^\"]*\"/versionName = \"${{ inputs.version }}\"/" app/build.gradle.kts
+          sed -i "s/versionCode = [0-9]*/versionCode = $(( RUN_NUMBER + 100 ))/" app/build.gradle.kts
+          sed -i "s/versionName = \"[^\"]*\"/versionName = \"$VERSION\"/" app/build.gradle.kts
           grep -n "versionCode\|versionName" app/build.gradle.kts
 
       - name: Unit tests
@@ -69,8 +78,10 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          TAG="v${{ inputs.version }}"
+          TAG="v$VERSION"
           gh release create "$TAG" grimreader.apk grimreader-mapping.zip \
-            --title "$TAG" --generate-notes --target "${{ github.sha }}"
+            --title "$TAG" --generate-notes --target "$TARGET_SHA"

@@ -2,6 +2,9 @@ package com.schmitzkr.grimreader.data
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.schmitzkr.grimreader.BuildConfig
@@ -59,6 +62,7 @@ class UpdateRepository @Inject constructor(
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.MINUTES)
+        .followSslRedirects(false)
         .build()
 
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
@@ -133,6 +137,12 @@ class UpdateRepository @Inject constructor(
                 }
                 target
             }
+            verifyApk(file)?.let { problem ->
+                file.delete()
+                Log.w(TAG, "Rejected downloaded update: $problem")
+                _state.value = UpdateState.Failed(problem)
+                return
+            }
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             context.startActivity(
                 Intent(Intent.ACTION_VIEW)
@@ -147,6 +157,56 @@ class UpdateRepository @Inject constructor(
             Log.w(TAG, "Update install failed", e)
             _state.value = UpdateState.Failed(e.message ?: "Update failed")
         }
+    }
+
+    /**
+     * Checks the downloaded archive before the installer sees it: same package,
+     * strictly higher version code, and the same signing certificates as the
+     * running app. Returns a user-facing problem, or null when it is fine.
+     * Below API 28 the legacy `GET_SIGNATURES` flag is used instead of
+     * `GET_SIGNING_CERTIFICATES`.
+     */
+    @Suppress("DEPRECATION")
+    private fun verifyApk(file: File): String? {
+        val pm = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        val archive = pm.getPackageArchiveInfo(file.path, flags)
+            ?: return "The downloaded update is not a valid app package"
+        val installed = try {
+            pm.getPackageInfo(context.packageName, flags)
+        } catch (e: PackageManager.NameNotFoundException) {
+            return "Could not read the installed app's signature"
+        }
+        if (archive.packageName != context.packageName) {
+            return "The downloaded update is for a different app"
+        }
+        if (versionCodeOf(archive) <= versionCodeOf(installed)) {
+            return "The downloaded update is not newer than the installed version"
+        }
+        val archiveSigners = signersOf(archive)
+        if (archiveSigners.isEmpty() || archiveSigners != signersOf(installed)) {
+            return "The downloaded update is not signed with this app's key"
+        }
+        return null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun versionCodeOf(info: PackageInfo): Long =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode
+        else info.versionCode.toLong()
+
+    @Suppress("DEPRECATION")
+    private fun signersOf(info: PackageInfo): Set<String> {
+        val sigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners
+        } else {
+            info.signatures
+        }
+        return sigs.orEmpty().map { it.toCharsString() }.toSet()
     }
 
     private fun fetchLatest(): Release {

@@ -41,6 +41,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -58,6 +60,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -82,6 +85,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -632,8 +636,10 @@ fun EpubReaderScreen(
             )
         }
 
-        if (!state.loading && state.error == null) {
-            // Always-on footer in the strip reserved under the page: where you are, at a glance.
+        if (!chrome && !state.loading && state.error == null) {
+            // Footer in the strip reserved under the page while the chrome is hidden: where you are, at a
+            // glance. With the chrome shown the bottom bar carries the same info, so this would only ghost
+            // behind it; the strip stays reserved (WebView padding) so nothing re-paginates.
             val footerColor = if (pageBackground.luminance() > 0.5f) Color(0xFF55555C) else Color(0xFFA8A8B0)
             val footer = listOf(state.chapter, state.pageLabel, "${state.percentage.toInt()}%").filter { it.isNotBlank() }.joinToString("  ·  ")
             Text(
@@ -764,12 +770,12 @@ fun EpubReaderScreen(
                 Text("Display", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp))
                 Text("Theme", style = MaterialTheme.typography.bodyLarge)
                 Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.SpaceBetween) {
                     readerThemeOptions.forEach { option ->
                         val selected = state.theme == option.key
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clickable { vm.setTheme(option.key) }.padding(4.dp),
+                            modifier = Modifier.minimumInteractiveComponentSize().selectable(selected = selected, role = Role.RadioButton) { vm.setTheme(option.key) }.padding(4.dp),
                         ) {
                             Box(
                                 Modifier

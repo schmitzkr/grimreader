@@ -25,6 +25,16 @@ fun rememberWindowWidth(): WindowWidth {
     }
 }
 
+/** The window's height class: COMPACT is a phone held in landscape, where stacked bottom chrome eats the screen. */
+enum class WindowHeight { COMPACT, REGULAR }
+
+@Composable
+fun rememberWindowHeight(): WindowHeight {
+    val px = LocalWindowInfo.current.containerSize.height
+    val height = with(LocalDensity.current) { px.toDp() }
+    return if (height < 480.dp) WindowHeight.COMPACT else WindowHeight.REGULAR
+}
+
 /** Keeps a page of settings or text at a readable width on a tablet, centred, full width on a phone. */
 @Composable
 fun ReadableWidth(maxWidth: Dp = 720.dp, content: @Composable () -> Unit) {

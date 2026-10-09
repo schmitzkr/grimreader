@@ -370,7 +370,8 @@ class EpubReaderViewModel @Inject constructor(
     }
 
     companion object {
-        const val ORIGIN = "https://appassets.androidplatform.net"
+        const val ASSET_HOST = "appassets.androidplatform.net"
+        const val ORIGIN = "https://$ASSET_HOST"
         const val PAGE = "$ORIGIN/assets/reader/index.html"
     }
 }
@@ -559,7 +560,7 @@ fun EpubReaderScreen(
                 modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBarsIgnoringVisibility).padding(bottom = READER_FOOTER_HEIGHT).onSizeChanged { webViewSizePx = it },
                 factory = { ctx ->
                     val loader = WebViewAssetLoader.Builder()
-                        .setDomain("appassets.androidplatform.net")
+                        .setDomain(EpubReaderViewModel.ASSET_HOST)
                         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
                         .addPathHandler(
                             "/books/",
@@ -579,12 +580,30 @@ fun EpubReaderScreen(
                         settings.javaScriptEnabled = true
                         settings.allowFileAccess = false
                         settings.allowContentAccess = false
-                        settings.domStorageEnabled = true
+                        // domStorageEnabled stays off: epub.js only touches localStorage/IndexedDB in
+                        // its offline Store, which the reader does not use, and book content has no
+                        // business persisting anything.
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         addJavascriptInterface(ReaderBridge(vm) { chrome = !chrome }, "Android")
                         webViewClient = object : WebViewClient() {
-                            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                                loader.shouldInterceptRequest(request.url)
+                            // Threat: book content is untrusted, and anything the asset loader does not
+                            // serve would otherwise hit the real network (tracking beacons via CSS/img/
+                            // font URLs). Refuse every request that is not on the asset origin.
+                            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                                val url = request.url
+                                if (url.scheme == "blob" || url.scheme == "data") return null
+                                if (url.scheme == "https" && url.host == EpubReaderViewModel.ASSET_HOST) return loader.shouldInterceptRequest(url)
+                                return WebResourceResponse("text/plain", "utf-8", 403, "Blocked", emptyMap(), null)
+                            }
+
+                            // Threat: a <meta http-equiv=refresh>, link or script-free redirect in a
+                            // chapter could navigate the page area to attacker content (in-app spoofing).
+                            // The reader has no external-link mechanism, so every navigation off the
+                            // asset origin is simply blocked.
+                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                val url = request.url
+                                return !(url.scheme == "https" && url.host == EpubReaderViewModel.ASSET_HOST)
+                            }
                             override fun onPageFinished(view: WebView, url: String?) { pageLoaded = true }
                         }
                         // epub.js/JSZip errors and any other page console output are otherwise

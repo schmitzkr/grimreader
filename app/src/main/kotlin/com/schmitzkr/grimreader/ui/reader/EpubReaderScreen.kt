@@ -638,17 +638,20 @@ fun EpubReaderScreen(
         }
         AnimatedVisibility(visible = chrome && !state.loading, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
             ReaderBar(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp)) {
-                IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page") }
-                Slider(
-                    value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
-                    onValueChange = { drag = it },
-                    onValueChangeFinished = { drag?.let { vm.goToPercentage(it * 100.0) }; drag = null },
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(8.dp))
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    // While dragging, the chapter and page it would land on show right
-                    // above the percentage, live -- the same trickplay-style preview the
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = vm::prev) { Icon(Icons.Rounded.ChevronLeft, "Previous page") }
+                        Slider(
+                            value = drag ?: (state.percentage / 100).toFloat().coerceIn(0f, 1f),
+                            onValueChange = { drag = it },
+                            onValueChangeFinished = { drag?.let { vm.goToPercentage(it * 100.0) }; drag = null },
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
+                    }
+                    // The numbers sit under the slider so it gets the bar's full width.
+                    // While dragging, the chapter and page it would land on replace the
+                    // page label, live -- the same trickplay-style preview the
                     // comic/PDF reader's page slider shows, adapted for a book with no
                     // page images: an approximate chapter from the already-loaded TOC's
                     // order, and a "page" from epub.js's own ~1024-character locations
@@ -657,26 +660,23 @@ fun EpubReaderScreen(
                     val toc = state.toc
                     val total = state.totalLocations
                     val d = drag
-                    if (d != null) {
+                    val percent = "${((d?.times(100)) ?: state.percentage).toInt()}%"
+                    val detail = if (d != null) {
                         val chapter = toc.takeIf { it.isNotEmpty() }?.let { it[(d * it.size).toInt().coerceIn(0, it.size - 1)].label }
                         val page = total?.takeIf { it > 0 }?.let { (d * it).toInt().coerceIn(0, it - 1) + 1 }
-                        val label = listOfNotNull(chapter?.takeIf { it.isNotBlank() }, page?.let { p -> "p.$p${total?.let { "/$it" } ?: ""}" })
-                            .joinToString(" · ")
-                        if (label.isNotBlank()) {
-                            Text(
-                                label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 110.dp),
-                            )
-                        }
+                        listOfNotNull(chapter?.takeIf { it.isNotBlank() }, page?.let { p -> "p.$p${total?.let { "/$it" } ?: ""}" })
+                    } else {
+                        listOfNotNull(state.pageLabel.takeIf { it.isNotBlank() })
                     }
-                    Text("${((d?.times(100)) ?: state.percentage).toInt()}%", style = MaterialTheme.typography.labelLarge)
-                    if (d == null && state.pageLabel.isNotBlank()) Text(state.pageLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        (detail + percent).joinToString(" · "),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
                 }
-                IconButton(onClick = vm::next) { Icon(Icons.Rounded.ChevronRight, "Next page") }
             }
         }
         if (state.exiting) {

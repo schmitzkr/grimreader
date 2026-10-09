@@ -36,7 +36,14 @@ class PdfPages(file: File) : AutoCloseable {
     suspend fun aspectRatio(index: Int): Float = try {
         lock.withLock {
             check(!closed.get()) { "PdfPages is closed" }
-            renderer.openPage(index).use { it.width.toFloat() / it.height }
+            renderer.openPage(index).use { page ->
+                // Same sanity bounds as render(), so a hostile MediaBox can't skew layout either.
+                if (page.width > 0 && page.height > 0) {
+                    (page.width.toFloat() / page.height).coerceAtLeast(MIN_ASPECT)
+                } else {
+                    DEFAULT_ASPECT
+                }
+            }
         }
     } finally {
         releaseIfClosedAndIdle()
@@ -48,8 +55,16 @@ class PdfPages(file: File) : AutoCloseable {
             lock.withLock {
                 check(!closed.get()) { "PdfPages is closed" }
                 renderer.openPage(index).use { page ->
-                    val height = (widthPx.toFloat() * page.height / page.width).toInt().coerceAtLeast(1)
-                    val bitmap = Bitmap.createBitmap(widthPx, height, Bitmap.Config.ARGB_8888)
+                    // The page's own size is untrusted: bound the bitmap (height <= 4x width,
+                    // <= 16 M pixels) rather than letting an extreme MediaBox request gigabytes.
+                    check(page.width > 0 && page.height > 0) { "PDF page has no size" }
+                    var w = widthPx.coerceAtLeast(1)
+                    var h = (w.toLong() * page.height / page.width).coerceIn(1L, w * 4L)
+                    if (w * h > MAX_PIXELS) {
+                        w = kotlin.math.sqrt(MAX_PIXELS.toDouble() * w / h).toInt().coerceAtLeast(1)
+                        h = (w.toLong() * page.height / page.width).coerceIn(1L, w * 4L)
+                    }
+                    val bitmap = Bitmap.createBitmap(w, h.toInt(), Bitmap.Config.ARGB_8888)
                     bitmap.eraseColor(Color.WHITE)
                     page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                     cache.put(index to widthPx, bitmap)
@@ -85,6 +100,9 @@ class PdfPages(file: File) : AutoCloseable {
     }
 
     private companion object {
+        const val MAX_PIXELS = 16L * 1024 * 1024
+        const val MIN_ASPECT = 0.25f // height <= 4x width, as in render()
+        const val DEFAULT_ASPECT = 0.7071f
         fun cacheBytes(): Int = (Runtime.getRuntime().maxMemory() / 8).coerceIn(32L shl 20, 128L shl 20).toInt()
     }
 }

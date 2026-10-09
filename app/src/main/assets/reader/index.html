@@ -2,6 +2,10 @@
 <html>
 <head>
 <meta charset="utf-8">
+<!-- Threat: book content is untrusted. Without a policy its CSS url()/@import, <img>, fonts
+     and media could fetch arbitrary remote URLs (tracking beacons) from the reader's device.
+     srcdoc iframes inherit this policy. The sha256 allows only the window.onerror net below. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'sha256-0V7LMhdfsH71uQHlWTI5qpA3VjsSmkT2PGIjfjGv/Fs='; style-src 'self' 'unsafe-inline' blob: data:; img-src 'self' blob: data:; font-src 'self' blob: data:; media-src 'self' blob: data:; connect-src 'self' blob:; frame-src 'self' blob: about:">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <style>
   /* Transparent, not a hardcoded color: the WebView itself is transparent

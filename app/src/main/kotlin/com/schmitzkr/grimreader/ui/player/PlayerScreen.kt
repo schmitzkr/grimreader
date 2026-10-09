@@ -59,6 +59,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -169,7 +172,11 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
         }
         val actions: @Composable () -> Unit = {
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                BottomAction(Icons.Outlined.Speed, formatSpeed(state.speed)) { sheet = "speed" }
+                BottomAction(
+                    Icons.Outlined.Speed,
+                    formatSpeed(state.speed),
+                    description = "Playback speed, ${formatSpeed(state.speed)}",
+                ) { sheet = "speed" }
                 BottomAction(
                     Icons.Outlined.Bedtime,
                     state.sleepRemainingMs?.let { if (state.sleepAtChapterEnd) "Chapter end" else formatShort(it) } ?: "Sleep",
@@ -292,14 +299,25 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun BottomAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        IconButton(onClick = onClick, enabled = enabled) { Icon(icon, label) }
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline,
-        )
+private fun BottomAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean = true,
+    description: String? = null,
+    onClick: () -> Unit,
+) {
+    val tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline
+    // The whole icon-plus-label column is one tap target and one accessibility node.
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(MaterialTheme.shapes.small)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .semantics(mergeDescendants = true) { if (description != null) contentDescription = description },
+    ) {
+        Icon(icon, contentDescription = null, tint = tint)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint)
     }
 }
 

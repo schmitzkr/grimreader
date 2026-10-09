@@ -58,6 +58,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -403,7 +406,11 @@ fun PageReaderScreen(
                     onValueChange = { drag = it },
                     onValueChangeFinished = { drag?.let { vm.jump(it.roundToInt()) }; drag = null },
                     valueRange = 0f..(count - 1).toFloat(),
-                    modifier = Modifier.weight(1f).padding(end = 8.dp).onGloballyPositioned { sliderCoords = it },
+                    modifier = Modifier.weight(1f).padding(end = 8.dp).onGloballyPositioned { sliderCoords = it }
+                        .semantics {
+                            contentDescription = "Page"
+                            stateDescription = "Page ${previewIndex + 1} of $count"
+                        },
                 )
             }
         }

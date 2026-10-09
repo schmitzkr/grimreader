@@ -236,6 +236,14 @@ fun BookDetailScreen(
     val message by vm.message.collectAsStateWithLifecycle()
     val sending by vm.sending.collectAsStateWithLifecycle()
     val user by vm.user.collectAsStateWithLifecycle()
+    var removeConfirm by remember { mutableStateOf<Long?>(null) }
+    removeConfirm?.let { bytes ->
+        com.schmitzkr.grimreader.ui.downloads.RemoveDownloadDialog(
+            bytes,
+            onConfirm = { (state as? BookUiState.Ready)?.let { vm.downloads.remove(it.book.id) }; removeConfirm = null },
+            onDismiss = { removeConfirm = null },
+        )
+    }
 
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -389,7 +397,7 @@ fun BookDetailScreen(
                                 Spacer(Modifier.width(8.dp))
                                 Text(if (dl.status == DownloadStatus.QUEUED) "Waiting… · Cancel" else "Downloading ${(dl.fraction * 100).toInt()}% · Cancel")
                             }
-                            else -> OutlinedButton(onClick = { vm.downloads.remove(book.id) }, modifier = Modifier.fillMaxWidth()) {
+                            else -> OutlinedButton(onClick = { removeConfirm = dl.bytes }, modifier = Modifier.fillMaxWidth()) {
                                 Icon(Icons.Rounded.DownloadDone, null)
                                 Spacer(Modifier.width(8.dp))
                                 Text("On this device · ${formatBytes(dl.bytes)} · Remove")

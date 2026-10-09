@@ -25,6 +25,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,6 +90,10 @@ fun DownloadsScreen(onBack: () -> Unit, onOpenBook: (Long) -> Unit, vm: Download
 
 @Composable
 private fun DownloadRow(entry: DownloadState, onOpen: () -> Unit, onCancel: () -> Unit, onRemove: () -> Unit, onRetry: () -> Unit) {
+    var confirmRemove by remember { mutableStateOf(false) }
+    if (confirmRemove) {
+        RemoveDownloadDialog(entry.bytes, onConfirm = { confirmRemove = false; onRemove() }, onDismiss = { confirmRemove = false })
+    }
     GrimCard(Modifier.fillMaxWidth()) {
         Column(Modifier.clickable(onClick = onOpen).padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -107,10 +114,10 @@ private fun DownloadRow(entry: DownloadState, onOpen: () -> Unit, onCancel: () -
                 }
                 when (entry.status) {
                     DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING -> IconButton(onClick = onCancel) { Icon(Icons.Rounded.Close, "Cancel") }
-                    DownloadStatus.DONE -> IconButton(onClick = onRemove) { Icon(Icons.Rounded.Delete, "Remove download") }
+                    DownloadStatus.DONE -> IconButton(onClick = { confirmRemove = true }) { Icon(Icons.Rounded.Delete, "Remove download") }
                     DownloadStatus.FAILED -> {
                         IconButton(onClick = onRetry) { Icon(Icons.Rounded.Refresh, "Retry") }
-                        IconButton(onClick = onRemove) { Icon(Icons.Rounded.Delete, "Remove") }
+                        IconButton(onClick = { confirmRemove = true }) { Icon(Icons.Rounded.Delete, "Remove") }
                     }
                 }
             }

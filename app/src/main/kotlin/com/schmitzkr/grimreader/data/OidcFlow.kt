@@ -54,6 +54,7 @@ class OidcFlow @Inject constructor(
         requireHttps(issuer, "identity provider")
         val authEndpoint = withContext(Dispatchers.IO) { discoverAuthorizationEndpoint(issuer) }
         requireHttps(authEndpoint, "identity provider's sign-in page")
+        OidcRedirectPolicy.requireSafeAuthorizationEndpoint(authEndpoint)
         val state = clients.current().api.oidcState()["state"]?.jsonPrimitive?.content
             ?: error("The server did not issue a sign-in state.")
         val verifier = randomToken(64)
@@ -77,9 +78,14 @@ class OidcFlow @Inject constructor(
 
     /** Builds the callback body for a redirect, or null if the state is unknown or stale. */
     suspend fun callbackFor(redirect: Uri): OidcCallbackRequest? {
-        if (redirect.scheme != REDIRECT_SCHEME || redirect.host != REDIRECT_HOST) return null
-        val code = redirect.getQueryParameter("code") ?: return null
-        val state = redirect.getQueryParameter("state") ?: return null
+        if (!OidcRedirectPolicy.isOurRedirect(
+                redirect.scheme, redirect.host, redirect.port, redirect.path, redirect.userInfo, redirect.fragment,
+            )
+        ) return null
+        val code = redirect.getQueryParameter("code")
+        val state = redirect.getQueryParameter("state")
+        if (!OidcRedirectPolicy.isUsableCallback(code, state, redirect.getQueryParameter("error"))) return null
+        if (code == null || state == null) return null
         val pending = settings.takeOidcPending(state) ?: return null
         return OidcCallbackRequest(
             code = code,

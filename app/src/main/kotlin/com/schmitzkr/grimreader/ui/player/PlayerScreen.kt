@@ -64,6 +64,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -141,7 +142,11 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
                     dragging?.let { player.seekToAbsolute((it * state.durationMs).toLong()) }
                     dragging = null
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().semantics {
+                    contentDescription = "Position"
+                    stateDescription =
+                        "${formatClock((fraction * state.durationMs).toLong())} of ${formatClock(state.durationMs)}"
+                },
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(formatClock((fraction * state.durationMs).toLong()), style = MaterialTheme.typography.bodySmall)
@@ -238,6 +243,10 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
                     onValueChange = { player.setSpeed((it * 20).roundToInt() / 20f) },
                     valueRange = 0.5f..3f,
                     steps = 24,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Playback speed"
+                        stateDescription = formatSpeed(state.speed)
+                    },
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 24.dp)) {
                     speedSteps.forEach { preset ->

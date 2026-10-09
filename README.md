@@ -63,6 +63,35 @@ digital library server. Kotlin and Jetpack Compose.
 - Checks for a newer release on GitHub, with an in-app banner and one-tap
   install
 
+## Screenshots
+
+<table>
+<tr>
+<td><img src="docs/screenshots/home.png" width="300" alt="Home tab"><br>Home</td>
+<td><img src="docs/screenshots/home-dark.png" width="300" alt="Home tab in dark mode"><br>Home (dark)</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/libraries.png" width="300" alt="Libraries tab"><br>Libraries</td>
+<td><img src="docs/screenshots/browse.png" width="300" alt="Browse tab, series list"><br>Browse</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/book-ebook.png" width="300" alt="Ebook detail screen"><br>Book detail (ebook)</td>
+<td><img src="docs/screenshots/book-audiobook.png" width="300" alt="Audiobook detail screen"><br>Book detail (audiobook)</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/player.png" width="300" alt="Now Playing screen"><br>Now Playing</td>
+<td><img src="docs/screenshots/mini-player.png" width="300" alt="Mini player over the Home tab"><br>Mini player</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/epub-reader.png" width="300" alt="EPUB reader"><br>EPUB reader</td>
+<td><img src="docs/screenshots/settings.png" width="300" alt="Settings screen"><br>Settings</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/login.png" width="300" alt="Sign-in screen"><br>Sign in</td>
+<td></td>
+</tr>
+</table>
+
 ## Coming next
 
 Nothing on a public roadmap right now; [open an

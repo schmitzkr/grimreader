@@ -3,6 +3,8 @@ package com.schmitzkr.grimreader.core
 import com.schmitzkr.grimreader.core.fb2.Fb2ToEpub
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
@@ -107,5 +109,48 @@ class Fb2ToEpubTest {
         assertTrue(one.contains("<h1>Part One</h1>"))
         assertTrue(one.contains("An epigraph."))
         assertTrue(e["OEBPS/text/chap002.xhtml"]!!.decodeToString().contains("<h2>Chapter 2</h2>"))
+    }
+
+    @Test
+    fun `a DOCTYPE is rejected`() {
+        val xml = """<?xml version="1.0"?>
+<!DOCTYPE FictionBook [<!ENTITY x "boom">]>
+<FictionBook><description/><body><section><p>&x;</p></section></body></FictionBook>"""
+        val e = assertThrows(IllegalArgumentException::class.java) { convert(xml.toByteArray()) }
+        assertTrue(e.message!!.contains("DOCTYPE"))
+    }
+
+    @Test
+    fun `a zip that inflates past the cap is rejected`() {
+        val zipped = ByteArrayOutputStream()
+        ZipOutputStream(zipped).use { z ->
+            z.putNextEntry(ZipEntry("big.fb2"))
+            val chunk = ByteArray(1024 * 1024)
+            repeat(65) { z.write(chunk) }
+            z.closeEntry()
+        }
+        assertTrue(zipped.size() < Fb2ToEpub.MAX_FB2_BYTES / 100)
+        val e = assertThrows(IllegalArgumentException::class.java) { convert(zipped.toByteArray()) }
+        assertTrue(e.message!!.contains("larger than"))
+    }
+
+    @Test
+    fun `an oversized binary is skipped and the rest converts`() {
+        val big = "AAAA".repeat(2048) // 6 KiB decoded, over the 1 KiB limit used here
+        val xml = fb2.replace("</FictionBook>", """<binary id="huge.png" content-type="image/png">$big</binary></FictionBook>""")
+        val out = ByteArrayOutputStream()
+        Fb2ToEpub.convert(xml.toByteArray(), out, Fb2ToEpub.Limits(maxBinaryBytes = 1024))
+        val e = entries(out.toByteArray())
+        assertFalse("OEBPS/images/huge.png" in e)
+        assertTrue("OEBPS/images/pic.png" in e)
+        assertTrue("OEBPS/text/chap001.xhtml" in e)
+    }
+
+    @Test
+    fun `nesting beyond the depth bound is rejected`() {
+        val depth = Fb2ToEpub.MAX_DEPTH + 40
+        val xml = "<FictionBook><description/><body>" + "<section>".repeat(depth) + "<p>x</p>" + "</section>".repeat(depth) + "</body></FictionBook>"
+        val e = assertThrows(IllegalArgumentException::class.java) { convert(xml.toByteArray()) }
+        assertTrue(e.message!!.contains("deep"))
     }
 }

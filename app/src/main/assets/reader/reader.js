@@ -183,6 +183,11 @@
         return afterRelocated(function () { rendition.prev(); });
       }
       quiet = true;
+      // Hide the page while the previous section is shown at its first page and
+      // scrolled to its last: otherwise the first page flashes on screen.
+      var viewer = document.getElementById('viewer');
+      var reveal = function () { if (viewer) viewer.style.opacity = ''; };
+      if (viewer) viewer.style.opacity = '0';
       return rendition.display(prevSec.href).then(settled).then(function () {
         var mm = rendition.manager;
         if (mm && mm.container && typeof mm.scrollTo === 'function' && mm.layout) {
@@ -192,12 +197,13 @@
         }
         quiet = false;
         return afterRelocated(function () { rendition.reportLocation(); }).then(function () {
+          reveal();
           // Diagnostic (logcat tag EpubReader): which section the back-turn targeted and where it landed.
           var s = lastLoc && lastLoc.start;
           console.log('back-turn: from=' + (cur && cur.href) + ' to=' + prevSec.href + ' landed=' + (s && s.href) +
             ' page=' + (s && s.displayed && (s.displayed.page + '/' + s.displayed.total)));
         });
-      }).catch(fail).then(function () { quiet = false; });
+      }).catch(fail).then(function () { quiet = false; reveal(); });
     });
   }
 

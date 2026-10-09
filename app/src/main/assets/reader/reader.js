@@ -87,45 +87,112 @@
 
   function chapterFor(loc) { return chapterForHref(loc.start.href); }
 
+  /* True while a multi-step back-turn is in flight: the intermediate
+   * locations (the previous section's first page) are not real reading
+   * positions and must not reach the footer, slider or progress saver. */
+  var quiet = false;
+
   function relocated(loc) {
     lastLoc = loc;
+    if (quiet) return;
     report('onRelocated', loc.start.cfi, percentageFor(loc), chapterFor(loc), !!loc.atEnd, pageLabelFor(loc));
   }
 
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
   /*
-   * Stepping back from the first page of a section: epub.js's own prev()
-   * loads the previous section and scrolls to its last page in the same
-   * tick, using a width measured before that section's images/fonts have
-   * laid out. The scroll offset it computes is stale, so the reader lands
-   * on the wrong page (seen as: tapping back reaches a chapter's end, then
-   * the next tap snaps to that chapter's start). Do it in two steps
-   * instead -- display the previous section, wait for it to settle, then
-   * ask the manager for its true last page.
+   * Page turns run strictly one at a time. A turn is finished only once the
+   * resulting location has been reported, so a quick second tap (or an arrow
+   * press right after a swipe) never decides its direction or its "am I on
+   * the first page" answer from a location that is one turn out of date.
    */
-  var stepping = false;
+  var navChain = Promise.resolve();
+  function enqueue(fn) {
+    navChain = navChain.then(function () {
+      return Promise.race([Promise.resolve().then(fn), sleep(4000)]);
+    }).catch(fail);
+    return navChain;
+  }
+
+  /* Runs start(), then resolves after the next 'relocated' event (or a short timeout if none comes, e.g. at the book's end). */
+  function afterRelocated(start) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish() { if (done) return; done = true; rendition.off('relocated', finish); resolve(); }
+      rendition.on('relocated', finish);
+      setTimeout(finish, 700);
+      start();
+    });
+  }
+
+  function goNext() {
+    return enqueue(function () {
+      if (!rendition) return;
+      return afterRelocated(function () { rendition.next(); });
+    });
+  }
+
+  /* Waits until the current section's laid-out size stops changing (images and fonts finished). */
+  function settled() {
+    var tries = 0, last = null;
+    return new Promise(function (resolve) {
+      (function poll() {
+        var m = rendition && rendition.manager;
+        var v = m && m.views && m.views.last && m.views.last();
+        var key = null;
+        try {
+          if (v && v.contents) {
+            var imgs = v.contents.document.images, pending = 0;
+            for (var i = 0; i < imgs.length; i++) if (!imgs[i].complete) pending++;
+            key = pending ? 'pending' : (v.contents.textWidth() + ':' + m.container.scrollWidth);
+          }
+        } catch (e) { key = null; }
+        tries++;
+        if ((key && key !== 'pending' && key === last) || tries > 20) { resolve(); return; }
+        last = key;
+        setTimeout(poll, 100);
+      })();
+    });
+  }
+
+  /*
+   * Going back. Inside a section epub.js's own prev() is right. From the
+   * first page of a section its prev() loads the previous section and scrolls
+   * to the end in the same tick using a stale width, so do it in steps: show
+   * the previous section (silently), wait for its layout to settle, scroll
+   * to its true last page, then report once. Whether we are on the first
+   * page comes from the live scroll position, not the last reported
+   * location, which can lag a turn behind or claim page 1 spuriously.
+   */
   function goPrev() {
-    if (!rendition || stepping) return;
-    var d = lastLoc && lastLoc.start && lastLoc.start.displayed;
-    var atSectionStart = !d || d.page <= 1;
-    var cur = lastLoc && lastLoc.start && book.spine.get(lastLoc.start.cfi);
-    var prevSec = atSectionStart && cur && cur.prev && cur.prev();
-    if (!prevSec) { rendition.prev(); return; }
-    stepping = true;
-    rendition.display(prevSec.href).then(function () {
-      return new Promise(function (r) { setTimeout(r, 120); });
-    }).then(function () {
-      // The bundled epub.js manager has no last(); do what its own prev()
-      // does after loading the previous section: scroll the paginated
-      // container to the final page, then report the new location.
+    return enqueue(function () {
+      if (!rendition) return;
       var m = rendition.manager;
-      if (m && m.container && typeof m.scrollTo === 'function' && m.layout) {
-        var rtl = m.settings && m.settings.direction === 'rtl';
-        if (!rtl) m.scrollTo(m.container.scrollWidth - m.layout.delta, 0, true);
-        else if (m.settings.rtlScrollType === 'default') m.scrollTo(0, 0, true);
-        else m.scrollTo(-1 * m.container.scrollWidth + m.layout.delta, 0, true);
-        return rendition.reportLocation();
+      var rtl = !!(m && m.settings && m.settings.direction === 'rtl');
+      var atSectionStart;
+      if (m && m.container && !rtl) {
+        atSectionStart = m.container.scrollLeft <= 1;
+      } else {
+        var d = lastLoc && lastLoc.start && lastLoc.start.displayed;
+        atSectionStart = !d || d.page <= 1;
       }
-    }).catch(fail).then(function () { stepping = false; });
+      var cur = lastLoc && lastLoc.start && book.spine.get(lastLoc.start.cfi);
+      var prevSec = atSectionStart && cur && cur.prev && cur.prev();
+      if (!atSectionStart || !prevSec) {
+        return afterRelocated(function () { rendition.prev(); });
+      }
+      quiet = true;
+      return rendition.display(prevSec.href).then(settled).then(function () {
+        var mm = rendition.manager;
+        if (mm && mm.container && typeof mm.scrollTo === 'function' && mm.layout) {
+          if (!rtl) mm.scrollTo(mm.container.scrollWidth - mm.layout.delta, 0, true);
+          else if (mm.settings.rtlScrollType === 'default') mm.scrollTo(0, 0, true);
+          else mm.scrollTo(-1 * mm.container.scrollWidth + mm.layout.delta, 0, true);
+        }
+        quiet = false;
+        return afterRelocated(function () { rendition.reportLocation(); });
+      }).catch(fail).then(function () { quiet = false; });
+    });
   }
 
   function attachGestures(contents) {
@@ -141,7 +208,7 @@
       var dx = t.clientX - startX, dy = t.clientY - startY;
       var quick = Date.now() - startT < 500;
       if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-        if (dx < 0) rendition.next(); else goPrev();
+        if (dx < 0) goNext(); else goPrev();
       } else if (quick && Math.abs(dx) < 12 && Math.abs(dy) < 12) {
         // currentWidth is the CSS width Kotlin actually measured and sized the
         // rendition to (see open()/resize()) -- contents.window.innerWidth and
@@ -153,7 +220,7 @@
         var w = currentWidth || contents.window.innerWidth || doc.documentElement.clientWidth || 1;
         var x = t.clientX / w;
         if (x < 0.3) goPrev();
-        else if (x > 0.7) rendition.next();
+        else if (x > 0.7) goNext();
         else report('onTap');
       }
       startX = null;
@@ -291,7 +358,7 @@
         }
       }).catch(fail);
     },
-    next: function () { if (rendition) rendition.next(); },
+    next: function () { goNext(); },
     prev: function () { goPrev(); },
     display: function (target) { if (rendition) rendition.display(target).catch(fail); },
     goToPercentage: function (p) {

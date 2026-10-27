@@ -5,6 +5,7 @@ import com.schmitzkr.grimreader.core.api.LoginRequest
 import com.schmitzkr.grimreader.core.api.RefreshRequest
 import com.schmitzkr.grimreader.core.api.ServerSecurity
 import com.schmitzkr.grimreader.core.api.classifyServerUrl
+import com.schmitzkr.grimreader.core.api.hostOf
 import android.net.Uri
 import com.schmitzkr.grimreader.core.model.CurrentUser
 import com.schmitzkr.grimreader.core.model.OidcProviderDetails
@@ -109,7 +110,7 @@ class AuthRepository @Inject constructor(
         when (classifyServerUrl(normalized)) {
             ServerSecurity.Secure -> {}
             ServerSecurity.InsecureLocal -> if (!allowInsecure) throw InsecureServerConfirmationRequired()
-            ServerSecurity.Refused -> throw RefusedInsecureServerException()
+            ServerSecurity.Refused -> throw RefusedInsecureServerException(hostOf(normalized))
         }
         clients.configure(normalized)
         // Probing the public settings both validates the address and tells
@@ -229,9 +230,10 @@ class AuthRepository @Inject constructor(
 
 
 /** A plain `http` address for a host outside the local network: never accepted. */
-class RefusedInsecureServerException : IllegalArgumentException(
-    "Plain http is only allowed for servers on your own network (a local IP address, localhost, or a .local, " +
-        ".lan, .home or .internal name). Use https:// for this server.",
+class RefusedInsecureServerException(host: String? = null) : IllegalArgumentException(
+    "Plain http is only allowed for servers on your own network or tailnet (a local or Tailscale IP address, " +
+        "localhost, or a .local, .lan, .home, .internal or .ts.net name), and ${host?.let { "\"$it\" is not one" } ?: "this address is not one"}. " +
+        "Use https:// for this server; on Tailscale, `tailscale serve` gives it an https:// .ts.net address.",
 )
 
 /** A plain `http` address on the local network: accepted only after the user confirms. */

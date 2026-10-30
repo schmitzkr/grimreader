@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -19,6 +21,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -27,6 +30,8 @@ data class NavItem(
     val label: String,
     val icon: ImageVector,
     val selectedIcon: ImageVector,
+    /** A dot on the icon, for something waiting on that tab (an update, say). */
+    val badged: Boolean = false,
 )
 
 /**
@@ -61,7 +66,10 @@ fun FloatingNavBar(
                     color = if (selected) scheme.secondaryContainer else scheme.surfaceContainerHigh,
                     modifier = Modifier
                         .weight(1f)
-                        .semantics { role = Role.Tab },
+                        .semantics {
+                            role = Role.Tab
+                            if (item.badged) stateDescription = "Update available"
+                        },
                 ) {
                     Column(
                         Modifier
@@ -69,12 +77,14 @@ fun FloatingNavBar(
                             .padding(horizontal = 4.dp, vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Icon(
-                            if (selected) item.selectedIcon else item.icon,
-                            contentDescription = null,
-                            tint = if (selected) scheme.primary else scheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp),
-                        )
+                        BadgedBox(badge = { if (item.badged) Badge() }) {
+                            Icon(
+                                if (selected) item.selectedIcon else item.icon,
+                                contentDescription = null,
+                                tint = if (selected) scheme.primary else scheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
                         Text(
                             item.label,
                             maxLines = 1,

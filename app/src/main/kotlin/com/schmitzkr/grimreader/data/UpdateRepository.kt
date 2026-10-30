@@ -103,8 +103,9 @@ class UpdateRepository @Inject constructor(
         ) UpdateState.Available(release) else UpdateState.Idle
     }
 
+    /** Clears a failure message. An available update is never dismissed here: it stays until installed. */
     fun dismiss() {
-        if (_state.value is UpdateState.Available) _state.value = UpdateState.Idle
+        if (_state.value is UpdateState.Failed) _state.value = UpdateState.Idle
     }
 
     /** Downloads the APK and opens the installer; the user finishes there. */

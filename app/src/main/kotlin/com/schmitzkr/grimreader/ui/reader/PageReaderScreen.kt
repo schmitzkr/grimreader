@@ -131,6 +131,7 @@ class PageReaderViewModel @Inject constructor(
     private val context: android.content.Context,
 ) : ViewModel() {
     val state = MutableStateFlow(ReaderUiState())
+    val keepScreenOn = settings.keepScreenOn
     private var bookId = -1L
     private lateinit var format: PageFormat
     private var bookFileId: Long? = null
@@ -321,6 +322,7 @@ fun PageReaderScreen(
         }
     }
 
+    KeepScreenOn(vm.keepScreenOn)
     Box(
         Modifier.fillMaxSize()
             .background(if (state.night || format == PageFormat.CBX) Color.Black else Color.White)

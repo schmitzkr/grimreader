@@ -125,6 +125,7 @@ data class ReaderUiState(
 class PageReaderViewModel @Inject constructor(
     private val books: BooksRepository,
     private val settings: Settings,
+    val volumeKeys: VolumeKeyPager,
     private val sessions: SessionRepository,
     private val downloads: DownloadManager,
     private val context: android.content.Context,
@@ -331,6 +332,10 @@ fun PageReaderScreen(
             state.source != null -> {
                 val source = state.source!!
                 val pager = rememberPagerState(initialPage = state.initialIndex) { source.count }
+                VolumeKeyPaging(vm.volumeKeys) { forward ->
+                    val target = if (forward) pager.currentPage + 1 else pager.currentPage - 1
+                    scope.launch { pager.animateScrollToPage(target.coerceIn(0, source.count - 1)) }
+                }
                 LaunchedEffect(pager) {
                     snapshotFlow { pager.currentPage }.collect { vm.pageChanged(it) }
                 }

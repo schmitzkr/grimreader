@@ -48,6 +48,8 @@ class Settings internal constructor(private val context: Context, private val ci
     val oledBlack: Flow<Boolean> = store.data.map { it[OLED_BLACK] ?: false }
     val autoRewind: Flow<Boolean> = store.data.map { it[AUTO_REWIND] ?: true }
     val shakeToReset: Flow<Boolean> = store.data.map { it[SHAKE_TO_RESET] ?: true }
+    val volumeKeyPaging: Flow<Boolean> = store.data.map { it[VOLUME_KEY_PAGING] ?: true }
+    val volumeKeyReverse: Flow<Boolean> = store.data.map { it[VOLUME_KEY_REVERSE] ?: false }
     val homeUpNext: Flow<Boolean> = store.data.map { it[HOME_UP_NEXT] ?: true }
     val homeRecentlyFinished: Flow<Boolean> = store.data.map { it[HOME_RECENTLY_FINISHED] ?: true }
 
@@ -62,6 +64,8 @@ class Settings internal constructor(private val context: Context, private val ci
     suspend fun setOledBlack(on: Boolean) = store.edit { it[OLED_BLACK] = on }
     suspend fun setAutoRewind(on: Boolean) = store.edit { it[AUTO_REWIND] = on }
     suspend fun setShakeToReset(on: Boolean) = store.edit { it[SHAKE_TO_RESET] = on }
+    suspend fun setVolumeKeyPaging(on: Boolean) = store.edit { it[VOLUME_KEY_PAGING] = on }
+    suspend fun setVolumeKeyReverse(on: Boolean) = store.edit { it[VOLUME_KEY_REVERSE] = on }
     suspend fun setHomeUpNext(on: Boolean) = store.edit { it[HOME_UP_NEXT] = on }
     suspend fun setHomeRecentlyFinished(on: Boolean) = store.edit { it[HOME_RECENTLY_FINISHED] = on }
 
@@ -223,6 +227,8 @@ class Settings internal constructor(private val context: Context, private val ci
         val EPUB_FONT = stringPreferencesKey("epub_font")
         val EPUB_LINE_PCT = intPreferencesKey("epub_line_pct")
         val SHAKE_TO_RESET = booleanPreferencesKey("shake_to_reset")
+        val VOLUME_KEY_PAGING = booleanPreferencesKey("volume_key_paging")
+        val VOLUME_KEY_REVERSE = booleanPreferencesKey("volume_key_reverse")
         val HOME_UP_NEXT = booleanPreferencesKey("home_up_next")
         val HOME_RECENTLY_FINISHED = booleanPreferencesKey("home_recently_finished")
         val PENDING_SESSIONS = stringPreferencesKey("pending_sessions")

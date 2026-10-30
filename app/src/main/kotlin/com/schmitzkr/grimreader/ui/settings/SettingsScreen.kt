@@ -106,6 +106,8 @@ class SettingsViewModel @Inject constructor(
     val oledBlack = settings.oledBlack.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val autoRewind = settings.autoRewind.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val shakeToReset = settings.shakeToReset.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val volumeKeyPaging = settings.volumeKeyPaging.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val volumeKeyReverse = settings.volumeKeyReverse.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val homeUpNext = settings.homeUpNext.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val homeRecentlyFinished = settings.homeRecentlyFinished.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
@@ -114,6 +116,8 @@ class SettingsViewModel @Inject constructor(
     fun setOledBlack(on: Boolean) = viewModelScope.launch { settings.setOledBlack(on) }
     fun setAutoRewind(on: Boolean) = viewModelScope.launch { settings.setAutoRewind(on) }
     fun setShakeToReset(on: Boolean) = viewModelScope.launch { settings.setShakeToReset(on) }
+    fun setVolumeKeyPaging(on: Boolean) = viewModelScope.launch { settings.setVolumeKeyPaging(on) }
+    fun setVolumeKeyReverse(on: Boolean) = viewModelScope.launch { settings.setVolumeKeyReverse(on) }
     fun setHomeUpNext(on: Boolean) = viewModelScope.launch { settings.setHomeUpNext(on) }
     fun setHomeRecentlyFinished(on: Boolean) = viewModelScope.launch { settings.setHomeRecentlyFinished(on) }
     fun signOut() = viewModelScope.launch { auth.signOut() }
@@ -130,6 +134,8 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
     val oled by vm.oledBlack.collectAsStateWithLifecycle()
     val autoRewind by vm.autoRewind.collectAsStateWithLifecycle()
     val shakeToReset by vm.shakeToReset.collectAsStateWithLifecycle()
+    val volumeKeyPaging by vm.volumeKeyPaging.collectAsStateWithLifecycle()
+    val volumeKeyReverse by vm.volumeKeyReverse.collectAsStateWithLifecycle()
     val homeUpNext by vm.homeUpNext.collectAsStateWithLifecycle()
     val homeRecentlyFinished by vm.homeRecentlyFinished.collectAsStateWithLifecycle()
     var confirm by remember { mutableStateOf<String?>(null) }
@@ -212,6 +218,27 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                     else "${done.size} book${if (done.size == 1) "" else "s"} · ${formatBytes(done.sumOf { it.bytes })}",
                     onOpenDownloads,
                 )
+            }
+        }
+
+        item { SectionLabel("Reading", Modifier.padding(0.dp)) }
+        item {
+            GrimCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    ToggleRow(
+                        "Volume keys turn pages",
+                        "In the readers, the volume buttons turn pages instead of changing the volume",
+                        volumeKeyPaging, vm::setVolumeKeyPaging,
+                    )
+                    if (volumeKeyPaging) {
+                        HorizontalDivider()
+                        ToggleRow(
+                            "Reverse volume keys",
+                            "Volume up turns forward and volume down turns back",
+                            volumeKeyReverse, vm::setVolumeKeyReverse,
+                        )
+                    }
+                }
             }
         }
 

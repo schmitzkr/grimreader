@@ -39,6 +39,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -135,6 +137,8 @@ private fun MainShell(vm: RootViewModel) {
     val destination = backStack?.destination
     val onTab = tabs.any { tab -> destination?.hierarchy?.any { it.route == tab.route } == true }
     val playback by vm.player.state.collectAsStateWithLifecycle()
+    val updateAvailable by vm.updateAvailable.collectAsStateWithLifecycle()
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.checkForUpdates() }
     // Every full-screen reading surface has its own floating bottom controls
     // (the player screen, and each book reader's own page slider/chevrons)
     // that the floating mini player would otherwise sit on top of.
@@ -319,7 +323,7 @@ private fun MainShell(vm: RootViewModel) {
             val bar: @Composable () -> Unit = {
             AnimatedVisibility(visible = onTab, enter = fadeIn(), exit = fadeOut()) {
                 FloatingNavBar(
-                    items = tabs,
+                    items = tabs.map { if (it.route == Routes.SETTINGS) it.copy(badged = updateAvailable) else it },
                     selectedRoute = tabs.firstOrNull { tab ->
                         destination?.hierarchy?.any { it.route == tab.route } == true
                     }?.route,

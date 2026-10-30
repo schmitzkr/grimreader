@@ -24,6 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -49,6 +52,7 @@ import com.schmitzkr.grimreader.core.model.DashboardScroller
 import com.schmitzkr.grimreader.data.AuthRepository
 import com.schmitzkr.grimreader.data.BooksRepository
 import com.schmitzkr.grimreader.data.UpdateRepository
+import com.schmitzkr.grimreader.data.UpdateState
 import com.schmitzkr.grimreader.ui.components.BookTile
 import com.schmitzkr.grimreader.ui.components.ErrorState
 import com.schmitzkr.grimreader.ui.components.LoadingState
@@ -96,7 +100,6 @@ class HomeViewModel @Inject constructor(
     init {
         load()
         viewModelScope.launch { books.progressChanged.collect { load(quiet = true) } }
-        viewModelScope.launch { updates.checkIfDue() }
     }
 
     fun coverUrl(book: Book) = books.coverUrl(book)
@@ -190,6 +193,7 @@ fun HomeScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val user by vm.user.collectAsStateWithLifecycle()
     val update by vm.updates.state.collectAsStateWithLifecycle()
+    var laterVersion by rememberSaveable { mutableStateOf<String?>(null) }
     val wide = rememberWindowWidth() == WindowWidth.EXPANDED
 
     when (val s = state) {
@@ -220,10 +224,12 @@ fun HomeScreen(
                     }
                 }
                 item {
+                    // "Later" only hides the card until the next launch; the Settings badge stays.
+                    val availableVersion = (update as? UpdateState.Available)?.release?.version
                     UpdateBanner(
-                        state = update,
+                        state = if (availableVersion != null && availableVersion == laterVersion) UpdateState.Idle else update,
                         onInstall = { r -> vm.viewModelScope.launch { vm.updates.install(r) } },
-                        onDismiss = vm.updates::dismiss,
+                        onDismiss = { if (availableVersion != null) laterVersion = availableVersion else vm.updates.dismiss() },
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }

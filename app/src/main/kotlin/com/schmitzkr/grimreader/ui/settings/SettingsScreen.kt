@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -295,30 +296,40 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
             val updateState by vm.updateState.collectAsStateWithLifecycle()
             GrimCard(Modifier.fillMaxWidth()) {
                 Column {
-                    Item(
-                        "What's new",
-                        "Installed ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})" +
-                            (latest?.let { " · latest ${it.version}" } ?: ""),
-                    ) { whatsNew = true }
-                    HorizontalDivider()
-                    when (val u = updateState) {
-                        is UpdateState.Available -> Item(
-                            "Update to ${u.release.version}",
-                            "Download and install the new version",
-                        ) { vm.installUpdate(u.release) }
-                        is UpdateState.Downloading -> Column {
-                            Item("Downloading ${u.release.version}…", "${(u.fraction * 100).toInt()}%")
-                            LinearProgressIndicator(
-                                progress = { u.fraction },
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).height(4.dp),
-                                drawStopIndicator = {},
+                    // One row: tap it for the release notes; the button on the right is the action.
+                    val u = updateState
+                    ListItem(
+                        headlineContent = { Text("Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})") },
+                        supportingContent = {
+                            Text(
+                                when {
+                                    u is UpdateState.Available -> "${u.release.version} is available · what's new"
+                                    u is UpdateState.Downloading -> "Downloading ${u.release.version}… ${(u.fraction * 100).toInt()}%"
+                                    u is UpdateState.Failed -> "Update failed: ${u.message}"
+                                    u is UpdateState.Checking -> "Checking for updates…"
+                                    latest != null -> "Up to date · what's new"
+                                    else -> "What's new · tap Check to look for updates"
+                                },
+                                color = if (u is UpdateState.Available) MaterialTheme.colorScheme.primary else Color.Unspecified,
                             )
-                        }
-                        is UpdateState.Failed -> Item("Update failed", "${u.message} · tap to check again") { vm.checkForUpdates() }
-                        else -> Item(
-                            "Check for updates",
-                            if (updateState is UpdateState.Checking) "Checking…" else "Looks for a newer release on GitHub",
-                        ) { vm.checkForUpdates() }
+                        },
+                        trailingContent = {
+                            when (u) {
+                                is UpdateState.Available -> Button(onClick = { vm.installUpdate(u.release) }) { Text("Update") }
+                                is UpdateState.Downloading, UpdateState.Checking -> Unit
+                                is UpdateState.Failed -> TextButton(onClick = vm::checkForUpdates) { Text("Retry") }
+                                else -> TextButton(onClick = vm::checkForUpdates) { Text("Check") }
+                            }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.clickable { whatsNew = true },
+                    )
+                    if (u is UpdateState.Downloading) {
+                        LinearProgressIndicator(
+                            progress = { u.fraction },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).height(4.dp),
+                            drawStopIndicator = {},
+                        )
                     }
                     HorizontalDivider()
                     ListItem(

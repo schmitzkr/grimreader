@@ -26,6 +26,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -361,12 +368,19 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
             Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
                 Text(latest?.let { "Version ${it.version}" } ?: "What's new", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(8.dp))
-                Text(
-                    latest?.notes?.takeIf { it.isNotBlank() }
-                        ?: if (latest == null) "Release notes could not be loaded. Check your connection and try again."
+                val notes = latest?.notes?.takeIf { it.isNotBlank() }
+                if (notes != null) {
+                    Text(
+                        releaseNotesText(notes, MaterialTheme.colorScheme.primary) { openInBrowser(context, it) },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                } else {
+                    Text(
+                        if (latest == null) "Release notes could not be loaded. Check your connection and try again."
                         else "No notes for this release.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
     }
@@ -390,6 +404,30 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
             },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } },
         )
+    }
+}
+
+private val releaseLink = Regex("""https://[^\s)]+""")
+
+/**
+ * GitHub's generated release notes as text: the markdown bullets and bold marks
+ * tidied, and every https link tappable (a pull request reads as "#222", a
+ * compare link as its tag range) in a Custom Tab.
+ */
+private fun releaseNotesText(notes: String, linkColor: Color, open: (Uri) -> Unit): AnnotatedString = buildAnnotatedString {
+    val style = TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline))
+    notes.trim().lines().joinToString("\n") { it.removePrefix("## ").replaceFirst("* ", "• ").replace("**", "") }.let { text ->
+        var last = 0
+        for (m in releaseLink.findAll(text)) {
+            append(text.substring(last, m.range.first))
+            val url = m.value
+            val label = Regex("""/pull/(\d+)$""").find(url)?.let { "#${it.groupValues[1]}" }
+                ?: url.substringAfter("/compare/", "").takeIf { it.isNotEmpty() && "/" !in it }
+                ?: url
+            withLink(LinkAnnotation.Url(url, style) { open(Uri.parse(url)) }) { append(label) }
+            last = m.range.last + 1
+        }
+        append(text.substring(last))
     }
 }
 

@@ -50,6 +50,7 @@ class Settings internal constructor(private val context: Context, private val ci
     val shakeToReset: Flow<Boolean> = store.data.map { it[SHAKE_TO_RESET] ?: true }
     val volumeKeyPaging: Flow<Boolean> = store.data.map { it[VOLUME_KEY_PAGING] ?: true }
     val volumeKeyReverse: Flow<Boolean> = store.data.map { it[VOLUME_KEY_REVERSE] ?: false }
+    val keepScreenOn: Flow<Boolean> = store.data.map { it[KEEP_SCREEN_ON] ?: true }
     val homeUpNext: Flow<Boolean> = store.data.map { it[HOME_UP_NEXT] ?: true }
     val homeRecentlyFinished: Flow<Boolean> = store.data.map { it[HOME_RECENTLY_FINISHED] ?: true }
 
@@ -66,6 +67,7 @@ class Settings internal constructor(private val context: Context, private val ci
     suspend fun setShakeToReset(on: Boolean) = store.edit { it[SHAKE_TO_RESET] = on }
     suspend fun setVolumeKeyPaging(on: Boolean) = store.edit { it[VOLUME_KEY_PAGING] = on }
     suspend fun setVolumeKeyReverse(on: Boolean) = store.edit { it[VOLUME_KEY_REVERSE] = on }
+    suspend fun setKeepScreenOn(on: Boolean) = store.edit { it[KEEP_SCREEN_ON] = on }
     suspend fun setHomeUpNext(on: Boolean) = store.edit { it[HOME_UP_NEXT] = on }
     suspend fun setHomeRecentlyFinished(on: Boolean) = store.edit { it[HOME_RECENTLY_FINISHED] = on }
 
@@ -229,6 +231,7 @@ class Settings internal constructor(private val context: Context, private val ci
         val SHAKE_TO_RESET = booleanPreferencesKey("shake_to_reset")
         val VOLUME_KEY_PAGING = booleanPreferencesKey("volume_key_paging")
         val VOLUME_KEY_REVERSE = booleanPreferencesKey("volume_key_reverse")
+        val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val HOME_UP_NEXT = booleanPreferencesKey("home_up_next")
         val HOME_RECENTLY_FINISHED = booleanPreferencesKey("home_recently_finished")
         val PENDING_SESSIONS = stringPreferencesKey("pending_sessions")

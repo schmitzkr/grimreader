@@ -108,6 +108,7 @@ class SettingsViewModel @Inject constructor(
     val shakeToReset = settings.shakeToReset.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val volumeKeyPaging = settings.volumeKeyPaging.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val volumeKeyReverse = settings.volumeKeyReverse.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val keepScreenOn = settings.keepScreenOn.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val homeUpNext = settings.homeUpNext.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val homeRecentlyFinished = settings.homeRecentlyFinished.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
@@ -118,6 +119,7 @@ class SettingsViewModel @Inject constructor(
     fun setShakeToReset(on: Boolean) = viewModelScope.launch { settings.setShakeToReset(on) }
     fun setVolumeKeyPaging(on: Boolean) = viewModelScope.launch { settings.setVolumeKeyPaging(on) }
     fun setVolumeKeyReverse(on: Boolean) = viewModelScope.launch { settings.setVolumeKeyReverse(on) }
+    fun setKeepScreenOn(on: Boolean) = viewModelScope.launch { settings.setKeepScreenOn(on) }
     fun setHomeUpNext(on: Boolean) = viewModelScope.launch { settings.setHomeUpNext(on) }
     fun setHomeRecentlyFinished(on: Boolean) = viewModelScope.launch { settings.setHomeRecentlyFinished(on) }
     fun signOut() = viewModelScope.launch { auth.signOut() }
@@ -136,6 +138,7 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
     val shakeToReset by vm.shakeToReset.collectAsStateWithLifecycle()
     val volumeKeyPaging by vm.volumeKeyPaging.collectAsStateWithLifecycle()
     val volumeKeyReverse by vm.volumeKeyReverse.collectAsStateWithLifecycle()
+    val keepScreenOn by vm.keepScreenOn.collectAsStateWithLifecycle()
     val homeUpNext by vm.homeUpNext.collectAsStateWithLifecycle()
     val homeRecentlyFinished by vm.homeRecentlyFinished.collectAsStateWithLifecycle()
     var confirm by remember { mutableStateOf<String?>(null) }
@@ -238,6 +241,12 @@ fun SettingsScreen(onOpenStats: () -> Unit, onOpenDownloads: () -> Unit, vm: Set
                             volumeKeyReverse, vm::setVolumeKeyReverse,
                         )
                     }
+                    HorizontalDivider()
+                    ToggleRow(
+                        "Keep screen on while reading",
+                        "The display won't dim or lock while a book is open in the readers",
+                        keepScreenOn, vm::setKeepScreenOn,
+                    )
                 }
             }
         }

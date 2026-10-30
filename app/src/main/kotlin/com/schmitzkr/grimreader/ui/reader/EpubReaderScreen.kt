@@ -118,6 +118,7 @@ import com.schmitzkr.grimreader.ui.components.LoadingState
 import com.schmitzkr.grimreader.ui.friendlyError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -134,6 +135,7 @@ import javax.inject.Inject
 data class TocEntry(val label: String = "", val href: String = "", val depth: Int = 0)
 
 private val READER_FOOTER_HEIGHT = 22.dp
+private const val CHROME_AUTO_HIDE_MS = 4_000L
 
 data class EpubUiState(
     val loading: Boolean = true,
@@ -177,6 +179,7 @@ class EpubReaderViewModel @Inject constructor(
     private val context: Context,
 ) : ViewModel() {
     val state = MutableStateFlow(EpubUiState())
+    val keepScreenOn = settings.keepScreenOn
     /** JavaScript for the page, in order. */
     val commands = MutableSharedFlow<String>(extraBufferCapacity = 32)
     private var bookId = -1L
@@ -480,9 +483,17 @@ fun EpubReaderScreen(
     val exit = { vm.exit(onBack) }
     BackHandler { exit() }
     VolumeKeyPaging(vm.volumeKeys) { forward -> if (forward) vm.next() else vm.prev() }
+    KeepScreenOn(vm.keepScreenOn)
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.foreground() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.background() }
 
+    // The bars float over the text, so they close themselves after a few idle seconds. Any
+    // interaction (a sheet opening, a slider drag, a page turn) restarts the countdown.
+    LaunchedEffect(chrome, sheet, drag != null, state.cfi) {
+        if (!chrome || sheet != null || drag != null) return@LaunchedEffect
+        delay(CHROME_AUTO_HIDE_MS)
+        chrome = false
+    }
     LaunchedEffect(chrome) {
         val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
         val controller = WindowCompat.getInsetsController(window, view)

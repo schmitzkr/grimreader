@@ -37,7 +37,10 @@ class MainActivity : ComponentActivity() {
         handleRedirect(intent)
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean = volumeKeys.handle(event) || super.dispatchKeyEvent(event)
+    // Not dispatchKeyEvent: lint flags it as restricted API on ComponentActivity. A volume
+    // key nothing else consumes still lands here, which is all the readers need.
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = volumeKeys.handle(event) || super.onKeyDown(keyCode, event)
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = volumeKeys.handle(event) || super.onKeyUp(keyCode, event)
 
     /** The browser's return from SSO: a cold start lands here through onCreate, a warm one through onNewIntent. */
     override fun onNewIntent(intent: Intent) {

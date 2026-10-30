@@ -15,7 +15,7 @@ import javax.inject.Singleton
  *
  * Keys can't be handled with a Compose key modifier: the EPUB reader's
  * WebView takes focus for itself, and a volume key nothing consumes goes to
- * the Activity. So `MainActivity.dispatchKeyEvent` hands every key here, and
+ * the Activity. So `MainActivity.onKeyDown`/`onKeyUp` hand every key here, and
  * a key is only taken while a reader has [attach]ed a handler -- everywhere
  * else the volume keys keep adjusting volume.
  */

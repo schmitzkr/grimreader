@@ -171,6 +171,7 @@ data class EpubUiState(
 class EpubReaderViewModel @Inject constructor(
     private val books: BooksRepository,
     private val settings: Settings,
+    val volumeKeys: VolumeKeyPager,
     private val sessions: SessionRepository,
     private val downloads: DownloadManager,
     private val context: Context,
@@ -478,6 +479,7 @@ fun EpubReaderScreen(
     val context = LocalContext.current
     val exit = { vm.exit(onBack) }
     BackHandler { exit() }
+    VolumeKeyPaging(vm.volumeKeys) { forward -> if (forward) vm.next() else vm.prev() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.foreground() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.background() }
 

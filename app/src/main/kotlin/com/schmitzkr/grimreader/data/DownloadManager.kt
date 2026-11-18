@@ -194,7 +194,8 @@ class DownloadManager @Inject constructor(
             val author = book.authors.joinToString(", ")
             updateOwned(bookId, job) { it.copy(title = book.title, author = author, status = DownloadStatus.DOWNLOADING) }
             try {
-                fetch(books.coverUrl(book), File(dir, COVER)) {}
+                val cover = if (kind == "AUDIOBOOK") books.listeningCoverUrl(book) else books.coverUrl(book)
+                fetch(cover, File(dir, COVER)) {}
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

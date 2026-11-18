@@ -259,7 +259,9 @@ class PlaybackService : MediaLibraryService() {
             fun fileUrl(file: java.io.File?): String? = file?.let { Uri.fromFile(it).toString() }
             val items = playableItems(
                 book, info,
-                coverUrl = fileUrl(downloads.localCover(bookId)) ?: books.coverUrl(book),
+                // A downloaded ebook's saved cover is not the listening art.
+                coverUrl = (if (local?.info != null) fileUrl(downloads.localCover(bookId)) else null)
+                    ?: books.listeningCoverUrl(book),
                 streamUrl = (if (local != null) fileUrl(downloads.localAudio(bookId, null)) else null) ?: books.streamUrl(bookId),
                 trackUrl = { i -> (if (local != null) fileUrl(downloads.localAudio(bookId, i)) else null) ?: books.trackStreamUrl(bookId, i) },
             )

@@ -61,8 +61,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.os.Build
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -109,9 +113,7 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
                     .clip(RoundedCornerShape(20.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             ) {
-                state.artworkUrl?.let {
-                    AsyncImage(it, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                }
+                state.artworkUrl?.let { CoverArt(it) }
             }
         }
         val controls: @Composable ColumnScope.() -> Unit = {
@@ -316,6 +318,30 @@ fun PlayerScreen(onBack: () -> Unit, vm: PlayerViewModel = hiltViewModel()) {
             }
         }
     }
+}
+
+/**
+ * The whole cover, never cropped. Square audiobook art fills the square; a
+ * portrait ebook cover sits centred over a blurred, dimmed copy of itself.
+ * Compose blurs only on Android 12+, so earlier versions keep the plain
+ * surface behind it. The backdrop is scaled up so the blur's soft edges
+ * fall outside the clip.
+ */
+@Composable
+private fun CoverArt(url: String) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        AsyncImage(
+            url,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { scaleX = 1.2f; scaleY = 1.2f }
+                .blur(28.dp),
+        )
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
+    }
+    AsyncImage(url, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
 }
 
 /** Why the book is not playing, announced as it appears, with a retry when there is a book to retry. */

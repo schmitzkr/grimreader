@@ -269,6 +269,23 @@ class BooksRepository @Inject constructor(
     fun coverUrl(book: Book): String = client().coverUrl(book.id, book.isAudiobook, book.coverVersion)
     fun coverUrl(bookId: Long, audiobook: Boolean): String = client().coverUrl(bookId, audiobook, null)
     fun fallbackCoverUrl(book: Book): String = client().fallbackCoverUrl(book.id, book.coverVersion)
+
+    /**
+     * The art to show while listening to [book]: its audiobook art when the
+     * server has some, else the book cover. A book whose primary file is an
+     * ebook would otherwise play under its portrait ebook cover even when
+     * its audio carries square art of its own. Unreachable: [coverUrl].
+     */
+    suspend fun listeningCoverUrl(book: Book): String {
+        val c = client()
+        val audio = c.coverUrl(book.id, audiobook = true, book.coverVersion)
+        val found = try {
+            c.exists(audio)
+        } catch (e: IOException) {
+            return coverUrl(book)
+        }
+        return if (found) audio else c.fallbackCoverUrl(book.id, book.coverVersion)
+    }
     fun streamUrl(bookId: Long): String = client().streamUrl(bookId)
     fun trackStreamUrl(bookId: Long, index: Int): String = client().trackStreamUrl(bookId, index)
 

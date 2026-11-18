@@ -220,6 +220,14 @@ class GrimmoryClient(
     fun coverUrl(bookId: Long, audiobook: Boolean, version: String?): String =
         versioned("${apiBase}media/book/$bookId/${if (audiobook) "audiobook-cover" else "cover"}", version)
 
+    /**
+     * Whether the server has something at [url], asked with a HEAD so no
+     * body is fetched. Any refusal (a 404 for missing art, or a server that
+     * does not answer HEAD) is false; a network failure throws [IOException].
+     */
+    suspend fun exists(url: String): Boolean =
+        withCall(Request.Builder().url(url).head().build().also { requireServerOrigin(it.url) }) { it.isSuccessful }
+
     /** The plain book cover, for an audiobook whose own art request failed. */
     fun fallbackCoverUrl(bookId: Long, version: String?): String =
         versioned("${apiBase}media/book/$bookId/cover", version)

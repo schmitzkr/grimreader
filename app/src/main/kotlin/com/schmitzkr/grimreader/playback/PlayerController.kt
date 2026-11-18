@@ -60,8 +60,10 @@ data class PlaybackState(
     val sleepRemainingMs: Long? = null,
     /** The running sleep timer ends at the current chapter's end rather than after a fixed length. */
     val sleepAtChapterEnd: Boolean = false,
-    /** Why the last load or connection failed, until the next [PlayerController.play]. */
+    /** Why the last load, stream or connection failed, until the next [PlayerController.play]. */
     val error: String? = null,
+    /** The book [error] is about, so a retry can ask for it again even when nothing is loaded. */
+    val errorBookId: Long? = null,
 ) {
     val hasBook: Boolean get() = bookId != null
     val progress: Float get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
@@ -194,7 +196,13 @@ class PlayerController @Inject constructor(
                 val bookId = args.getLong(LoadFailed.BOOK_ID, -1L)
                 if (bookId == loadingBookId) {
                     loadingBookId = null
-                    _state.update { it.copy(error = args.getString(LoadFailed.MESSAGE) ?: "Could not load this book") }
+                    _state.update {
+                        it.copy(
+                            loading = false,
+                            error = args.getString(LoadFailed.MESSAGE) ?: "Could not load this book",
+                            errorBookId = bookId,
+                        )
+                    }
                     refresh()
                 }
             }
@@ -206,12 +214,14 @@ class PlayerController @Inject constructor(
 
     /** Loads [bookId] (resuming its saved position) and starts playing. */
     fun play(bookId: Long) {
-        _state.update { it.copy(error = null) }
+        _state.update { it.copy(error = null, errorBookId = null) }
         val c = controller
         if (c != null && c.currentMediaItem?.bookId == bookId && c.mediaItemCount > 0) {
             // An earlier chapter fetch may have failed (offline); a deliberate
             // tap on the same book is the moment to try again.
             ensureInfo(bookId, retry = true)
+            // A failed stream leaves the player idle; play() alone would do nothing.
+            if (c.playbackState == Player.STATE_IDLE) c.prepare()
             c.play()
             return
         }
@@ -225,7 +235,14 @@ class PlayerController @Inject constructor(
         }
     }
 
-    fun togglePlayPause() = command { c -> if (c.isPlaying) c.pause() else c.play() }
+    fun togglePlayPause() {
+        // Play on a book that failed is a retry. A failed switch can leave the
+        // previous book loaded; its play button still resumes that one.
+        val s = _state.value
+        val failedBook = s.errorBookId
+        if (failedBook != null && (failedBook == s.bookId || !s.hasBook)) return play(failedBook)
+        command { c -> if (c.isPlaying) c.pause() else c.play() }
+    }
 
     fun pause() = command { it.pause() }
 
@@ -388,7 +405,12 @@ class PlayerController @Inject constructor(
             // Nothing loaded: either a book is on its way (keep the spinner for
             // it) or the player is empty.
             if (loadingFor == null) _state.update {
-                PlaybackState(sleepRemainingMs = it.sleepRemainingMs, sleepAtChapterEnd = it.sleepAtChapterEnd, error = it.error)
+                PlaybackState(
+                    sleepRemainingMs = it.sleepRemainingMs,
+                    sleepAtChapterEnd = it.sleepAtChapterEnd,
+                    error = it.error,
+                    errorBookId = it.errorBookId,
+                )
             }
             return
         }
@@ -401,8 +423,13 @@ class PlayerController @Inject constructor(
         }
         if (bookId != null) ensureInfo(bookId)
         val position = c.currentPosition.coerceAtLeast(0)
+        // The stream itself failing (the server answering the audio request
+        // with an error) leaves the player idle with the error set.
+        val streamError = c.playerError
         _state.update { s ->
             s.copy(
+                error = streamError?.let { playbackErrorMessage(it.errorCode) } ?: s.error,
+                errorBookId = if (streamError != null) bookId ?: s.bookId else s.errorBookId,
                 bookId = bookId ?: s.bookId,
                 title = item.mediaMetadata.albumTitle?.toString() ?: item.mediaMetadata.title?.toString() ?: s.title,
                 artist = item.mediaMetadata.artist?.toString() ?: "",

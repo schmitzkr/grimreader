@@ -238,7 +238,7 @@ class PlaybackService : MediaLibraryService() {
                     scope.launch {
                         session?.broadcastCustomCommand(
                             SessionCommand(LoadFailed.ACTION, Bundle.EMPTY),
-                            bundleOf(LoadFailed.BOOK_ID to bookId, LoadFailed.MESSAGE to (e.message ?: "Could not load this book")),
+                            bundleOf(LoadFailed.BOOK_ID to bookId, LoadFailed.MESSAGE to loadFailureMessage(e)),
                         )
                     }
                     throw e
